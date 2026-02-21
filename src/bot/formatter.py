@@ -56,6 +56,15 @@ def format_listing_approx(listing: Listing, deviations: List[str]) -> str:
     return f"⚠️ <b>Почти подходит:</b>\n{deviation_lines}\n\n{base}"
 
 
+def format_empty_listings_message() -> str:
+    """Сообщение при отсутствии объявлений по текущим фильтрам."""
+    return (
+        "По вашим фильтрам сейчас нет объявлений. Возможно, по таким требованиям "
+        "вы не найдёте подходящий объект — попробуйте ослабить критерии "
+        "(цена, площадь, допуск)."
+    )
+
+
 def format_listing_short(listing: Listing) -> str:
     """Краткий формат для списка (без фото)."""
     price = _format_price(listing.price)

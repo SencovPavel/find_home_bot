@@ -104,6 +104,7 @@ class UserFilter:
     tolerance_percent: int = 0
     initial_listings_count: int = 0  # 0 = отключено, 1-30 = сколько показать сразу при старте
     is_active: bool = False
+    empty_notified_at: Optional[float] = None  # unix timestamp, сбрасывается при изменении фильтров
 
     def matches(self, listing: Listing) -> bool:
         """Проверяет, подходит ли объявление под фильтры пользователя."""

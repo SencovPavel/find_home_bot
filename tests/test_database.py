@@ -136,3 +136,32 @@ async def test_database_seen_with_different_sources(temp_db_path: str) -> None:
         assert await db.is_seen("yandex", 100, 14) is True
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_database_empty_notified_at_round_trip_and_reset(temp_db_path: str) -> None:
+    """mark_empty_notified сохраняет timestamp, upsert_filter сбрасывает его."""
+    db = Database(temp_db_path)
+    await db.connect()
+    try:
+        user_filter = UserFilter(user_id=16, cities=[1], is_active=True)
+        await db.upsert_filter(user_filter)
+
+        loaded = await db.get_filter(16)
+        assert loaded is not None
+        assert loaded.empty_notified_at is None
+
+        await db.mark_empty_notified(16)
+        loaded_after = await db.get_filter(16)
+        assert loaded_after is not None
+        assert loaded_after.empty_notified_at is not None
+        assert loaded_after.empty_notified_at > 0
+
+        # При повторном upsert флаг сбрасывается
+        user_filter.price_min = 50_000
+        await db.upsert_filter(user_filter)
+        reloaded = await db.get_filter(16)
+        assert reloaded is not None
+        assert reloaded.empty_notified_at is None
+    finally:
+        await db.close()

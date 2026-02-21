@@ -8,7 +8,7 @@ from typing import List, Optional
 from aiogram import Bot
 from aiogram.types import InputMediaPhoto
 
-from src.bot.formatter import format_listing, format_listing_approx
+from src.bot.formatter import format_empty_listings_message, format_listing, format_listing_approx
 from src.parser.avito import search_listings as avito_search
 from src.parser.cian import search_listings as cian_search
 
@@ -40,17 +40,29 @@ async def check_new_listings(bot: Bot, db: Database) -> None:
             )
 
 
+async def _send_empty_listings_notification(bot: Bot, user_id: int) -> None:
+    """Отправляет уведомление об отсутствии объявлений по фильтрам."""
+    text = format_empty_listings_message()
+    await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+
+
 async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None:
     """Парсит все площадки, фильтрует и отправляет новые объявления одному пользователю."""
     listings = await _aggregate_listings(user_filter)
     sent_count = 0
     approx_count = 0
+    total_matching = 0
 
     for listing in listings:
+        matches_strict = user_filter.matches(listing)
+        matches_approx = user_filter.matches_approx(listing)
+        if matches_strict or matches_approx is not None:
+            total_matching += 1
+
         if await db.is_seen(listing.source.value, listing.listing_id, user_filter.user_id):
             continue
 
-        if user_filter.matches(listing):
+        if matches_strict:
             try:
                 await _send_listing(bot, user_filter.user_id, listing)
                 await db.mark_seen(listing.source.value, listing.listing_id, user_filter.user_id)
@@ -64,7 +76,7 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
                 )
             continue
 
-        deviations = user_filter.matches_approx(listing)
+        deviations = matches_approx
         if deviations is not None:
             try:
                 await _send_listing(bot, user_filter.user_id, listing, deviations=deviations)
@@ -85,6 +97,15 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
             sent_count,
             approx_count,
         )
+    elif total_matching == 0 and user_filter.empty_notified_at is None:
+        try:
+            await _send_empty_listings_notification(bot, user_filter.user_id)
+            await db.mark_empty_notified(user_filter.user_id)
+        except Exception:
+            logger.exception(
+                "Ошибка при отправке уведомления об отсутствии объявлений пользователю %d",
+                user_filter.user_id,
+            )
 
 
 async def _aggregate_listings(
@@ -134,18 +155,22 @@ async def send_initial_listings(
 
     strict: List[tuple[Listing, Optional[List[str]]]] = []
     approx: List[tuple[Listing, Optional[List[str]]]] = []
+    matched_but_seen = False
 
     for listing in listings:
-        if await db.is_seen(
+        matches_strict = user_filter.matches(listing)
+        matches_approx = user_filter.matches_approx(listing)
+        is_seen = await db.is_seen(
             listing.source.value, listing.listing_id, user_filter.user_id
-        ):
+        )
+        if is_seen:
+            if matches_strict or matches_approx is not None:
+                matched_but_seen = True
             continue
-        if user_filter.matches(listing):
+        if matches_strict:
             strict.append((listing, None))
-        else:
-            deviations = user_filter.matches_approx(listing)
-            if deviations is not None:
-                approx.append((listing, deviations))
+        elif matches_approx is not None:
+            approx.append((listing, matches_approx))
 
     to_send = strict + approx
     sent = 0
@@ -173,6 +198,15 @@ async def send_initial_listings(
             user_filter.user_id,
             sent,
         )
+    elif not matched_but_seen:
+        try:
+            await _send_empty_listings_notification(bot, user_filter.user_id)
+            await db.mark_empty_notified(user_filter.user_id)
+        except Exception:
+            logger.exception(
+                "Ошибка при отправке уведомления об отсутствии объявлений пользователю %d",
+                user_filter.user_id,
+            )
     return sent
 
 

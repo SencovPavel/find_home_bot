@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Sequence
 
 import aiosqlite
@@ -51,6 +52,7 @@ _MIGRATIONS = [
     "ALTER TABLE user_filters ADD COLUMN initial_listings_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE user_filters ADD COLUMN commission_max_percent INTEGER NOT NULL DEFAULT 100",
     "UPDATE user_filters SET commission_max_percent = 0 WHERE no_commission = 1",
+    "ALTER TABLE user_filters ADD COLUMN empty_notified_at REAL",
 ]
 
 
@@ -130,7 +132,8 @@ class Database:
                 commission_max_percent = excluded.commission_max_percent,
                 tolerance_percent = excluded.tolerance_percent,
                 initial_listings_count = excluded.initial_listings_count,
-                is_active = excluded.is_active
+                is_active = excluded.is_active,
+                empty_notified_at = NULL
             """,
             (
                 f.user_id,
@@ -151,6 +154,14 @@ class Database:
                 f.initial_listings_count,
                 int(f.is_active),
             ),
+        )
+        await self.db.commit()
+
+    async def mark_empty_notified(self, user_id: int) -> None:
+        """Помечает, что пользователю отправлено уведомление об отсутствии объявлений."""
+        await self.db.execute(
+            "UPDATE user_filters SET empty_notified_at = ? WHERE user_id = ?",
+            (time.time(), user_id),
         )
         await self.db.commit()
 
@@ -221,4 +232,9 @@ def _row_to_filter(row: aiosqlite.Row) -> UserFilter:
         tolerance_percent=int(row["tolerance_percent"]),
         initial_listings_count=int(row["initial_listings_count"]),
         is_active=bool(row["is_active"]),
+        empty_notified_at=(
+            float(row["empty_notified_at"])
+            if "empty_notified_at" in row.keys() and row["empty_notified_at"] is not None
+            else None
+        ),
     )
