@@ -8,6 +8,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.data.cities import City, get_millioner_cities
 
+BACK_BUTTON = InlineKeyboardButton(text="← Назад", callback_data="back")
+
 # ── Города ─────────────────────────────────────────────────────────
 
 
@@ -58,6 +60,7 @@ def rooms_keyboard(selected: list[int] | None = None) -> InlineKeyboardMarkup:
     buttons.append([
         InlineKeyboardButton(text="Готово →", callback_data="rooms:done"),
     ])
+    buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -86,6 +89,7 @@ def price_keyboard() -> InlineKeyboardMarkup:
     buttons.append([
         InlineKeyboardButton(text="Ввести вручную", callback_data="price:custom"),
     ])
+    buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -106,6 +110,7 @@ def area_keyboard() -> InlineKeyboardMarkup:
     buttons.append([
         InlineKeyboardButton(text="Не важно", callback_data="area:0"),
     ])
+    buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -126,6 +131,7 @@ def kitchen_keyboard() -> InlineKeyboardMarkup:
     buttons.append([
         InlineKeyboardButton(text="Не важно", callback_data="kitchen:0"),
     ])
+    buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -156,6 +162,7 @@ def renovation_keyboard(selected: list[str] | None = None) -> InlineKeyboardMark
     buttons.append([
         InlineKeyboardButton(text="Готово →", callback_data="renovation:done"),
     ])
+    buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -166,6 +173,7 @@ def pets_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Скрывать с запретом на животных", callback_data="pets:1")],
         [InlineKeyboardButton(text="Показывать все", callback_data="pets:0")],
+        [BACK_BUTTON],
     ])
 
 
@@ -176,6 +184,7 @@ def commission_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Только без комиссии", callback_data="commission:1")],
         [InlineKeyboardButton(text="Не важно", callback_data="commission:0")],
+        [BACK_BUTTON],
     ])
 
 
@@ -201,6 +210,7 @@ def tolerance_keyboard() -> InlineKeyboardMarkup:
     buttons.append([
         InlineKeyboardButton(text="Ввести свой %", callback_data="tolerance:custom"),
     ])
+    buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -227,6 +237,7 @@ def initial_listings_keyboard() -> InlineKeyboardMarkup:
     buttons.append([
         InlineKeyboardButton(text="Ввести число", callback_data="initial_listings:custom"),
     ])
+    buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -237,4 +248,5 @@ def confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Запустить мониторинг", callback_data="confirm:start")],
         [InlineKeyboardButton(text="Настроить заново", callback_data="confirm:restart")],
+        [BACK_BUTTON],
     ])

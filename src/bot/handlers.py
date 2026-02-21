@@ -8,7 +8,7 @@ import time
 from typing import TYPE_CHECKING
 
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -585,6 +585,135 @@ async def _show_confirm_step(callback: CallbackQuery, state: FSMContext) -> None
         parse_mode="HTML",
     )
     await state.set_state(SearchWizard.confirm)
+
+
+# ── Кнопка «Назад» ──────────────────────────────────────────────────
+
+@router.callback_query(
+    StateFilter(
+        SearchWizard.rooms,
+        SearchWizard.price,
+        SearchWizard.area,
+        SearchWizard.kitchen,
+        SearchWizard.renovation,
+        SearchWizard.pets,
+        SearchWizard.commission,
+        SearchWizard.tolerance,
+        SearchWizard.initial_listings,
+        SearchWizard.confirm,
+    ),
+    F.data == "back",
+)
+async def on_back(callback: CallbackQuery, state: FSMContext) -> None:
+    """Обработка кнопки «Назад»: возврат к предыдущему шагу с сохранёнными данными."""
+    if await _is_rate_limited_callback(callback):
+        return
+
+    current = await state.get_state()
+    data = await state.get_data()
+    msg = callback.message
+    if msg is None:
+        await callback.answer()
+        return
+
+    if current == SearchWizard.rooms.state:
+        await state.set_state(SearchWizard.city)
+        await msg.edit_text(
+            f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Выберите город из списка или введите название",
+            reply_markup=city_millioners_keyboard(),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.price.state:
+        rooms = data.get("rooms", [])
+        rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
+        city_id = data.get("city", 1)
+        city = get_city_by_id(city_id)
+        city_name = city.name if city else str(city_id)
+        await state.set_state(SearchWizard.rooms)
+        await msg.edit_text(
+            f"🏙 Город: <b>{city_name}</b>\n\n"
+            f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
+            reply_markup=rooms_keyboard(rooms),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.area.state:
+        rooms = data.get("rooms", [])
+        rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
+        await state.set_state(SearchWizard.price)
+        await msg.edit_text(
+            f"🚪 Комнаты: <b>{rooms_text}</b>\n\n"
+            f"💰 <b>Шаг 3/{TOTAL_STEPS}:</b> Выберите ценовой диапазон",
+            reply_markup=price_keyboard(),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.kitchen.state:
+        price_min = data.get("price_min", 0)
+        price_max = data.get("price_max", 0)
+        area_min = data.get("area_min", 0)
+        area_text = f"от {area_min} м²" if area_min else "Не важно"
+        await state.set_state(SearchWizard.area)
+        await msg.edit_text(
+            f"💰 Цена: <b>{_price_range_text(price_min, price_max)}</b>\n\n"
+            f"📐 <b>Шаг 4/{TOTAL_STEPS}:</b> Минимальная общая площадь",
+            reply_markup=area_keyboard(),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.renovation.state:
+        area_min = data.get("area_min", 0)
+        area_text = f"от {area_min} м²" if area_min else "Не важно"
+        await state.set_state(SearchWizard.kitchen)
+        await msg.edit_text(
+            f"📐 Площадь: <b>{area_text}</b>\n\n"
+            f"🍳 <b>Шаг 5/{TOTAL_STEPS}:</b> Минимальная площадь кухни",
+            reply_markup=kitchen_keyboard(),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.pets.state:
+        renovation_types = data.get("renovation_types", [])
+        kitchen_min = data.get("kitchen_area_min", 0)
+        kitchen_text = f"от {kitchen_min} м²" if kitchen_min else "Не важно"
+        await state.set_state(SearchWizard.renovation)
+        await msg.edit_text(
+            f"🍳 Кухня: <b>{kitchen_text}</b>\n\n"
+            f"🔧 <b>Шаг 6/{TOTAL_STEPS}:</b> Допустимый тип ремонта",
+            reply_markup=renovation_keyboard(renovation_types),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.commission.state:
+        await state.set_state(SearchWizard.pets)
+        await msg.edit_text(
+            f"🔧 Ремонт: <b>{', '.join(RenovationType.label(r) for r in data.get('renovation_types', [])) or 'Любой'}</b>\n\n"
+            f"🐾 <b>Шаг 7/{TOTAL_STEPS}:</b> Фильтр по животным",
+            reply_markup=pets_keyboard(),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.tolerance.state:
+        await state.set_state(SearchWizard.commission)
+        await msg.edit_text(
+            f"🐾 Животные: <b>{'Скрывать с запретом' if data.get('pets_allowed') else 'Показывать все'}</b>\n\n"
+            f"💼 <b>Шаг 8/{TOTAL_STEPS}:</b> Фильтр по комиссии",
+            reply_markup=commission_keyboard(),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.initial_listings.state:
+        await state.set_state(SearchWizard.tolerance)
+        await msg.edit_text(
+            f"💼 Комиссия: <b>{'Только без комиссии' if data.get('no_commission') else 'Не важно'}</b>\n\n"
+            f"📊 <b>Шаг 9/{TOTAL_STEPS}:</b> Допуск для «почти подходящих» объявлений\n"
+            "Если объявление чуть-чуть не попадает в критерии (цена, площадь), "
+            "оно придёт с пометкой.",
+            reply_markup=tolerance_keyboard(),
+            parse_mode="HTML",
+        )
+    elif current == SearchWizard.confirm.state:
+        await state.set_state(SearchWizard.initial_listings)
+        await msg.edit_text(
+            f"📋 <b>Шаг {TOTAL_STEPS}/{TOTAL_STEPS}:</b> Сколько объявлений показать сразу при запуске?",
+            reply_markup=initial_listings_keyboard(),
+            parse_mode="HTML",
+        )
+
+    await callback.answer()
 
 
 # ── Подтверждение ──────────────────────────────────────────────────
