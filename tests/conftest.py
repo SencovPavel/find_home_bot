@@ -6,14 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from src.parser.models import Listing, MetroTransport, UserFilter
+from src.parser.models import Listing, MetroTransport, Source, UserFilter
 
 
 @pytest.fixture
 def sample_listing() -> Listing:
     """Возвращает тестовое объявление."""
     return Listing(
-        cian_id=123,
+        listing_id=123,
+        source=Source.CIAN,
         url="https://www.cian.ru/rent/flat/123/",
         title="2-комн. квартира <центр>",
         price=100_000,

@@ -103,7 +103,7 @@ async def test_on_price_custom_max_happy_path_updates_state() -> None:
 
     assert state.data["price_max"] == 120000
     assert state.current_state == handlers.SearchWizard.area
-    assert any("Шаг 4/7" in text for text in message.answers)
+    assert any("Шаг 4/9" in text for text in message.answers)
 
 
 @pytest.mark.asyncio
@@ -115,4 +115,4 @@ async def test_cmd_search_can_skip_rate_limit_for_internal_restart() -> None:
     await handlers.cmd_search(message, state, skip_rate_limit=True)  # type: ignore[arg-type]
 
     assert state.current_state == handlers.SearchWizard.city
-    assert any("Шаг 1/7" in text for text in message.answers)
+    assert any("Шаг 1/9" in text for text in message.answers)

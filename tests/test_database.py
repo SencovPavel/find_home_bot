@@ -55,9 +55,9 @@ async def test_database_active_and_seen_flow(temp_db_path: str) -> None:
         assert len(active_after) == 1
         assert active_after[0].user_id == user_filter.user_id
 
-        assert await db.is_seen(1001, user_filter.user_id) is False
-        await db.mark_seen(1001, user_filter.user_id)
-        assert await db.is_seen(1001, user_filter.user_id) is True
+        assert await db.is_seen("cian", 1001, user_filter.user_id) is False
+        await db.mark_seen("cian", 1001, user_filter.user_id)
+        assert await db.is_seen("cian", 1001, user_filter.user_id) is True
 
         await db.cleanup_old(days=0)
     finally:
