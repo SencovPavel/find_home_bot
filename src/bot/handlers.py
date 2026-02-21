@@ -20,6 +20,8 @@ from src.bot.keyboards import (
     city_search_results_keyboard,
     commission_keyboard,
     confirm_keyboard,
+    edit_filter_menu_keyboard,
+    edit_filter_single_button_keyboard,
     initial_listings_keyboard,
     kitchen_keyboard,
     pets_keyboard,
@@ -137,7 +139,7 @@ async def on_city_text(message: Message, state: FSMContext) -> None:
 
 
 @router.callback_query(SearchWizard.city, F.data.startswith("city:"))
-async def on_city(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_city(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "city", expected_parts=2)
@@ -154,6 +156,12 @@ async def on_city(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.update_data(city=city_id)
 
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+        await callback.answer()
+        return
+
     await callback.message.edit_text(  # type: ignore[union-attr]
         f"🏙 Город: <b>{city.name}</b>\n\n"
         f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
@@ -167,7 +175,7 @@ async def on_city(callback: CallbackQuery, state: FSMContext) -> None:
 # ── Комнаты (мульти-выбор) ─────────────────────────────────────────
 
 @router.callback_query(SearchWizard.rooms, F.data.startswith("rooms:"))
-async def on_rooms(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_rooms(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "rooms", expected_parts=2)
@@ -178,6 +186,10 @@ async def on_rooms(callback: CallbackQuery, state: FSMContext) -> None:
 
     if value == "done":
         data = await state.get_data()
+        if edit_field := data.get("edit_filter"):
+            await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+            await callback.answer()
+            return
         rooms = data.get("rooms", [])
         rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
         await callback.message.edit_text(  # type: ignore[union-attr]
@@ -209,7 +221,7 @@ async def on_rooms(callback: CallbackQuery, state: FSMContext) -> None:
 # ── Цена ───────────────────────────────────────────────────────────
 
 @router.callback_query(SearchWizard.price, F.data.startswith("price:"))
-async def on_price(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_price(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "price", minimum_parts=2, maximum_parts=3)
@@ -240,6 +252,11 @@ async def on_price(callback: CallbackQuery, state: FSMContext) -> None:
             await _reject_bad_callback(callback, text="Некорректный диапазон цены.")
             return
         await state.update_data(price_min=price_min, price_max=price_max)
+        data = await state.get_data()
+        if edit_field := data.get("edit_filter"):
+            await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+            await callback.answer()
+            return
         await _show_area_step(callback, state, price_min, price_max)
 
     await callback.answer()
@@ -264,7 +281,7 @@ async def on_price_custom_min(message: Message, state: FSMContext) -> None:
 
 
 @router.message(SearchWizard.price_custom_max)
-async def on_price_custom_max(message: Message, state: FSMContext) -> None:
+async def on_price_custom_max(message: Message, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_message(message):
         return
     price_max = _parse_price_input(message.text)
@@ -282,6 +299,9 @@ async def on_price_custom_max(message: Message, state: FSMContext) -> None:
         await message.answer("Максимальная цена должна быть больше или равна минимальной.")
         return
     await state.update_data(price_max=price_max)
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(message, state, db, message.from_user.id, edit_field)  # type: ignore[union-attr]
+        return
     await message.answer(
         f"💰 Цена: <b>{_price_range_text(price_min, price_max)}</b>\n\n"
         f"📐 <b>Шаг 4/{TOTAL_STEPS}:</b> Минимальная общая площадь",
@@ -306,7 +326,7 @@ async def _show_area_step(
 # ── Площадь ────────────────────────────────────────────────────────
 
 @router.callback_query(SearchWizard.area, F.data.startswith("area:"))
-async def on_area(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_area(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "area", expected_parts=2)
@@ -318,6 +338,12 @@ async def on_area(callback: CallbackQuery, state: FSMContext) -> None:
         await _reject_bad_callback(callback)
         return
     await state.update_data(area_min=area)
+
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+        await callback.answer()
+        return
 
     area_text = f"от {area} м²" if area else "Не важно"
     await callback.message.edit_text(  # type: ignore[union-attr]
@@ -333,7 +359,7 @@ async def on_area(callback: CallbackQuery, state: FSMContext) -> None:
 # ── Кухня ──────────────────────────────────────────────────────────
 
 @router.callback_query(SearchWizard.kitchen, F.data.startswith("kitchen:"))
-async def on_kitchen(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_kitchen(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "kitchen", expected_parts=2)
@@ -345,6 +371,12 @@ async def on_kitchen(callback: CallbackQuery, state: FSMContext) -> None:
         await _reject_bad_callback(callback)
         return
     await state.update_data(kitchen_area_min=kitchen)
+
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+        await callback.answer()
+        return
 
     kitchen_text = f"от {kitchen} м²" if kitchen else "Не важно"
     await callback.message.edit_text(  # type: ignore[union-attr]
@@ -360,7 +392,7 @@ async def on_kitchen(callback: CallbackQuery, state: FSMContext) -> None:
 # ── Ремонт (мульти-выбор) ─────────────────────────────────────────
 
 @router.callback_query(SearchWizard.renovation, F.data.startswith("renovation:"))
-async def on_renovation(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_renovation(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "renovation", expected_parts=2)
@@ -371,9 +403,18 @@ async def on_renovation(callback: CallbackQuery, state: FSMContext) -> None:
 
     if value == "any":
         await state.update_data(renovation_types=[])
+        data = await state.get_data()
+        if edit_field := data.get("edit_filter"):
+            await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+            await callback.answer()
+            return
         await _show_pets_step(callback, state, [])
     elif value == "done":
         data = await state.get_data()
+        if edit_field := data.get("edit_filter"):
+            await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+            await callback.answer()
+            return
         selected = data.get("renovation_types", [])
         await _show_pets_step(callback, state, selected)
     else:
@@ -414,7 +455,7 @@ async def _show_pets_step(
 # ── Животные ───────────────────────────────────────────────────────
 
 @router.callback_query(SearchWizard.pets, F.data.startswith("pets:"))
-async def on_pets(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_pets(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "pets", expected_parts=2)
@@ -426,6 +467,12 @@ async def on_pets(callback: CallbackQuery, state: FSMContext) -> None:
         return
     pets_allowed = parts[1] == "1"
     await state.update_data(pets_allowed=pets_allowed)
+
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+        await callback.answer()
+        return
 
     pets_text = "Скрывать с запретом" if pets_allowed else "Показывать все"
     await callback.message.edit_text(  # type: ignore[union-attr]
@@ -441,7 +488,7 @@ async def on_pets(callback: CallbackQuery, state: FSMContext) -> None:
 # ── Комиссия ───────────────────────────────────────────────────────
 
 @router.callback_query(SearchWizard.commission, F.data.startswith("commission:"))
-async def on_commission(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_commission(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "commission", expected_parts=2)
@@ -453,6 +500,12 @@ async def on_commission(callback: CallbackQuery, state: FSMContext) -> None:
         return
     no_commission = parts[1] == "1"
     await state.update_data(no_commission=no_commission)
+
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+        await callback.answer()
+        return
 
     commission_text = "Только без комиссии" if no_commission else "Не важно"
     await callback.message.edit_text(  # type: ignore[union-attr]
@@ -470,7 +523,7 @@ async def on_commission(callback: CallbackQuery, state: FSMContext) -> None:
 # ── Допуск (tolerance) ─────────────────────────────────────────────
 
 @router.callback_query(SearchWizard.tolerance, F.data.startswith("tolerance:"))
-async def on_tolerance(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_tolerance(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "tolerance", expected_parts=2)
@@ -493,12 +546,17 @@ async def on_tolerance(callback: CallbackQuery, state: FSMContext) -> None:
         await _reject_bad_callback(callback)
         return
     await state.update_data(tolerance_percent=tolerance)
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+        await callback.answer()
+        return
     await _show_initial_listings_step(callback, state)
     await callback.answer()
 
 
 @router.message(SearchWizard.tolerance_text)
-async def on_tolerance_text(message: Message, state: FSMContext) -> None:
+async def on_tolerance_text(message: Message, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_message(message):
         return
     raw = (message.text or "").strip().replace("%", "")
@@ -508,6 +566,10 @@ async def on_tolerance_text(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(tolerance_percent=tolerance)
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(message, state, db, message.from_user.id, edit_field)  # type: ignore[union-attr]
+        return
     await message.answer(
         f"📊 <b>Шаг {TOTAL_STEPS}/{TOTAL_STEPS}:</b> Сколько объявлений показать сразу при запуске?",
         reply_markup=initial_listings_keyboard(),
@@ -517,7 +579,7 @@ async def on_tolerance_text(message: Message, state: FSMContext) -> None:
 
 
 @router.callback_query(SearchWizard.initial_listings, F.data.startswith("initial_listings:"))
-async def on_initial_listings(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_initial_listings(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_callback(callback):
         return
     parts = _parse_callback_parts(callback.data, "initial_listings", expected_parts=2)
@@ -540,12 +602,17 @@ async def on_initial_listings(callback: CallbackQuery, state: FSMContext) -> Non
         await _reject_bad_callback(callback)
         return
     await state.update_data(initial_listings_count=value)
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+        await callback.answer()
+        return
     await _show_confirm_step(callback, state)
     await callback.answer()
 
 
 @router.message(SearchWizard.initial_listings_text)
-async def on_initial_listings_text(message: Message, state: FSMContext) -> None:
+async def on_initial_listings_text(message: Message, state: FSMContext, db: Database) -> None:
     if await _is_rate_limited_message(message):
         return
     raw = (message.text or "").strip()
@@ -556,6 +623,9 @@ async def on_initial_listings_text(message: Message, state: FSMContext) -> None:
 
     await state.update_data(initial_listings_count=value)
     data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(message, state, db, message.from_user.id, edit_field)  # type: ignore[union-attr]
+        return
     summary = _build_summary(data)
     await message.answer(
         f"<b>Ваши фильтры:</b>\n\n{summary}",
@@ -604,13 +674,20 @@ async def _show_confirm_step(callback: CallbackQuery, state: FSMContext) -> None
     ),
     F.data == "back",
 )
-async def on_back(callback: CallbackQuery, state: FSMContext) -> None:
-    """Обработка кнопки «Назад»: возврат к предыдущему шагу с сохранёнными данными."""
+async def on_back(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    """Обработка кнопки «Назад»: возврат к предыдущему шагу или к /filters в режиме редактирования."""
     if await _is_rate_limited_callback(callback):
         return
 
     current = await state.get_state()
     data = await state.get_data()
+    if data.get("edit_filter"):
+        await state.clear()
+        msg = callback.message
+        if msg is not None:
+            await _show_filters_view(msg, db=db, user_id=callback.from_user.id)
+        await callback.answer()
+        return
     msg = callback.message
     if msg is None:
         await callback.answer()
@@ -775,6 +852,215 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
         )
 
 
+# ── Редактирование фильтра ─────────────────────────────────────────
+
+async def _save_edit_filter_and_show(
+    callback_or_msg: CallbackQuery | Message,
+    state: FSMContext,
+    db: Database,
+    user_id: int,
+    edit_field: str,
+) -> None:
+    """Сохраняет изменённый фильтр и показывает сводку."""
+    base = await db.get_filter(user_id)
+    if base is None:
+        return
+    data = await state.get_data()
+    updated = _fsm_data_to_user_filter(data, base, user_id, edit_field)
+    await db.upsert_filter(updated)
+    await state.clear()
+    if isinstance(callback_or_msg, CallbackQuery):
+        msg = callback_or_msg.message
+        use_answer = False
+    else:
+        msg = callback_or_msg
+        use_answer = True
+    if msg is not None:
+        await _show_filters_view(
+            msg, db=db, user_id=user_id,
+            edit_text="✅ Фильтр обновлён.", with_menu=True, use_answer=use_answer
+        )
+
+
+async def _show_filters_view(
+    msg: Message,
+    *,
+    db: Database,
+    user_id: int,
+    edit_text: str | None = None,
+    with_menu: bool = False,
+    use_answer: bool = False,
+) -> None:
+    """Показывает сводку фильтров. use_answer=True — отправить новое сообщение (для message handler)."""
+    user_filter = await db.get_filter(user_id)
+    if user_filter is None:
+        return
+    summary = _build_summary_from_filter(user_filter)
+    status = "🟢 Активен" if user_filter.is_active else "🔴 Приостановлен"
+    text = f"<b>Ваши фильтры</b> ({status}):\n\n{summary}"
+    if edit_text:
+        text += f"\n\n{edit_text}"
+    markup = edit_filter_menu_keyboard() if with_menu else edit_filter_single_button_keyboard()
+    if use_answer:
+        await msg.answer(text, reply_markup=markup, parse_mode="HTML")
+    else:
+        await msg.edit_text(text, reply_markup=markup, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "edit_filter:menu")
+async def on_edit_filter_menu(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    """Показывает меню выбора фильтра для изменения."""
+    if await _is_rate_limited_callback(callback):
+        return
+    user_filter = await db.get_filter(callback.from_user.id)
+    if user_filter is None:
+        await callback.answer("Сначала настройте фильтры: /search", show_alert=True)
+        return
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "<b>Какой фильтр изменить?</b>",
+        reply_markup=edit_filter_menu_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "edit_filter:back")
+async def on_edit_filter_back(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    """Возврат к просмотру фильтров без сохранения."""
+    if await _is_rate_limited_callback(callback):
+        return
+    await state.clear()
+    msg = callback.message
+    if msg is not None:
+        await _show_filters_view(msg, db=db, user_id=callback.from_user.id)
+    await callback.answer()
+
+
+_EDIT_FILTER_FIELDS = frozenset(
+    {"city", "rooms", "price", "area", "kitchen", "renovation", "pets", "commission", "tolerance", "initial_listings"}
+)
+
+
+@router.callback_query(F.data.startswith("edit_filter:"))
+async def on_edit_filter_select(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    """Вход в редактирование конкретного фильтра."""
+    if await _is_rate_limited_callback(callback):
+        return
+    parts = (callback.data or "").split(":", 1)
+    if len(parts) != 2 or parts[1] not in _EDIT_FILTER_FIELDS:
+        await callback.answer()
+        return
+    edit_field = parts[1]
+    user_filter = await db.get_filter(callback.from_user.id)
+    if user_filter is None:
+        await callback.answer("Сначала настройте фильтры: /search", show_alert=True)
+        return
+
+    fsm_data = _user_filter_to_fsm_data(user_filter)
+    fsm_data["edit_filter"] = edit_field
+    await state.update_data(**fsm_data)
+    msg = callback.message
+    if msg is None:
+        await callback.answer()
+        return
+
+    if edit_field == "city":
+        await state.set_state(SearchWizard.city)
+        city = get_city_by_id(user_filter.city)
+        city_name = city.name if city else str(user_filter.city)
+        await msg.edit_text(
+            f"✏️ <b>Изменить город</b>\n\nТекущий: {city_name}\n\n"
+            f"Выберите из списка или введите название:",
+            reply_markup=city_millioners_keyboard(),
+            parse_mode="HTML",
+        )
+    elif edit_field == "rooms":
+        await state.set_state(SearchWizard.rooms)
+        rooms_text = ", ".join(f"{r}-комн." for r in sorted(user_filter.rooms)) if user_filter.rooms else "Любые"
+        city = get_city_by_id(user_filter.city)
+        city_name = city.name if city else str(user_filter.city)
+        await msg.edit_text(
+            f"✏️ <b>Изменить комнаты</b>\n\nТекущие: {rooms_text}\n\n"
+            f"Выберите количество комнат:",
+            reply_markup=rooms_keyboard(user_filter.rooms),
+            parse_mode="HTML",
+        )
+    elif edit_field == "price":
+        await state.set_state(SearchWizard.price)
+        rooms = user_filter.rooms
+        rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
+        await msg.edit_text(
+            f"✏️ <b>Изменить цену</b>\n\nТекущий диапазон: {_price_range_text(user_filter.price_min, user_filter.price_max)}\n\n"
+            f"Выберите ценовой диапазон:",
+            reply_markup=price_keyboard(),
+            parse_mode="HTML",
+        )
+    elif edit_field == "area":
+        await state.set_state(SearchWizard.area)
+        price_min, price_max = user_filter.price_min, user_filter.price_max
+        await msg.edit_text(
+            f"✏️ <b>Изменить площадь</b>\n\n"
+            f"Текущая: от {user_filter.area_min} м²\n\n"
+            f"Выберите минимальную площадь:",
+            reply_markup=area_keyboard(),
+            parse_mode="HTML",
+        )
+    elif edit_field == "kitchen":
+        await state.set_state(SearchWizard.kitchen)
+        area_text = f"от {user_filter.area_min} м²" if user_filter.area_min else "Не важно"
+        await msg.edit_text(
+            f"✏️ <b>Изменить площадь кухни</b>\n\n"
+            f"Текущая: {area_text}\n\nВыберите минимальную площадь кухни:",
+            reply_markup=kitchen_keyboard(),
+            parse_mode="HTML",
+        )
+    elif edit_field == "renovation":
+        await state.set_state(SearchWizard.renovation)
+        names = ", ".join(RenovationType.label(r) for r in user_filter.renovation_types) if user_filter.renovation_types else "Любой"
+        await msg.edit_text(
+            f"✏️ <b>Изменить ремонт</b>\n\nТекущий: {names}\n\nВыберите тип ремонта:",
+            reply_markup=renovation_keyboard(user_filter.renovation_types),
+            parse_mode="HTML",
+        )
+    elif edit_field == "pets":
+        await state.set_state(SearchWizard.pets)
+        pets_text = "Скрывать с запретом" if user_filter.pets_allowed else "Показывать все"
+        await msg.edit_text(
+            f"✏️ <b>Изменить фильтр по животным</b>\n\nТекущий: {pets_text}\n\nВыберите:",
+            reply_markup=pets_keyboard(),
+            parse_mode="HTML",
+        )
+    elif edit_field == "commission":
+        await state.set_state(SearchWizard.commission)
+        commission_text = "Только без комиссии" if user_filter.no_commission else "Не важно"
+        await msg.edit_text(
+            f"✏️ <b>Изменить фильтр по комиссии</b>\n\nТекущий: {commission_text}\n\nВыберите:",
+            reply_markup=commission_keyboard(),
+            parse_mode="HTML",
+        )
+    elif edit_field == "tolerance":
+        await state.set_state(SearchWizard.tolerance)
+        tol = user_filter.tolerance_percent
+        tol_text = f"{tol}%" if tol else "Отключён"
+        await msg.edit_text(
+            f"✏️ <b>Изменить допуск</b>\n\nТекущий: {tol_text}\n\nВыберите допуск:",
+            reply_markup=tolerance_keyboard(),
+            parse_mode="HTML",
+        )
+    elif edit_field == "initial_listings":
+        await state.set_state(SearchWizard.initial_listings)
+        count = user_filter.initial_listings_count
+        count_text = f"{count} объявлений" if count else "отключено"
+        await msg.edit_text(
+            f"✏️ <b>Изменить количество при запуске</b>\n\nТекущее: {count_text}\n\n"
+            f"Сколько объявлений показать сразу при запуске?",
+            reply_markup=initial_listings_keyboard(),
+            parse_mode="HTML",
+        )
+
+    await callback.answer()
+
+
 # ── /filters ───────────────────────────────────────────────────────
 
 @router.message(Command("filters"))
@@ -795,6 +1081,7 @@ async def cmd_filters(message: Message, db: Database) -> None:
 
     await message.answer(
         f"<b>Ваши фильтры</b> ({status}):\n\n{summary}",
+        reply_markup=edit_filter_single_button_keyboard(),
         parse_mode="HTML",
     )
 
@@ -899,6 +1186,47 @@ def _build_summary_from_filter(f: UserFilter) -> str:
         "tolerance_percent": f.tolerance_percent,
         "initial_listings_count": f.initial_listings_count,
     })
+
+
+def _user_filter_to_fsm_data(f: UserFilter) -> dict:
+    """Преобразует UserFilter в словарь для state.update_data."""
+    return {
+        "city": f.city,
+        "rooms": f.rooms,
+        "price_min": f.price_min,
+        "price_max": f.price_max,
+        "area_min": f.area_min,
+        "kitchen_area_min": f.kitchen_area_min,
+        "renovation_types": f.renovation_types,
+        "pets_allowed": f.pets_allowed,
+        "no_commission": f.no_commission,
+        "tolerance_percent": f.tolerance_percent,
+        "initial_listings_count": f.initial_listings_count,
+    }
+
+
+def _fsm_data_to_user_filter(
+    data: dict, base: UserFilter, user_id: int, edit_field: str
+) -> UserFilter:
+    """Создаёт UserFilter из base с обновлённым полем из data."""
+    def g(key: str, default: object = None) -> object:
+        return data.get(key, getattr(base, key, default))
+
+    return UserFilter(
+        user_id=user_id,
+        city=g("city", 1) if edit_field == "city" else base.city,
+        rooms=g("rooms", []) if edit_field == "rooms" else base.rooms,
+        price_min=g("price_min", 0) if edit_field in ("price", "price_custom") else base.price_min,
+        price_max=g("price_max", 0) if edit_field in ("price", "price_custom") else base.price_max,
+        area_min=g("area_min", 0) if edit_field == "area" else base.area_min,
+        kitchen_area_min=g("kitchen_area_min", 0) if edit_field == "kitchen" else base.kitchen_area_min,
+        renovation_types=g("renovation_types", []) if edit_field == "renovation" else base.renovation_types,
+        pets_allowed=g("pets_allowed", True) if edit_field == "pets" else base.pets_allowed,
+        no_commission=g("no_commission", False) if edit_field == "commission" else base.no_commission,
+        tolerance_percent=g("tolerance_percent", 0) if edit_field == "tolerance" else base.tolerance_percent,
+        initial_listings_count=g("initial_listings_count", 0) if edit_field == "initial_listings" else base.initial_listings_count,
+        is_active=base.is_active,
+    )
 
 
 def _parse_callback_parts(

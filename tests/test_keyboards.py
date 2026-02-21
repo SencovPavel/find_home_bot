@@ -6,9 +6,11 @@ from src.bot.keyboards import (
     area_keyboard,
     city_millioners_keyboard,
     city_search_results_keyboard,
-    initial_listings_keyboard,
     commission_keyboard,
     confirm_keyboard,
+    edit_filter_menu_keyboard,
+    edit_filter_single_button_keyboard,
+    initial_listings_keyboard,
     kitchen_keyboard,
     pets_keyboard,
     price_keyboard,
@@ -125,12 +127,14 @@ def test_renovation_keyboard_has_any_and_done() -> None:
     assert "Готово →" in texts
 
 
-def test_pets_keyboard_has_two_options() -> None:
-    """Клавиатура животных содержит две опции."""
+def test_pets_keyboard_has_two_options_and_back() -> None:
+    """Клавиатура животных содержит две опции и кнопку «Назад»."""
     kb = pets_keyboard()
     texts = [btn.text for row in kb.inline_keyboard for btn in row]
 
-    assert len(texts) == 2
+    assert "Скрывать с запретом на животных" in texts
+    assert "Показывать все" in texts
+    assert "← Назад" in texts
 
 
 def test_commission_keyboard_has_two_options() -> None:
@@ -159,6 +163,27 @@ def test_initial_listings_keyboard_has_options() -> None:
     assert "5" in texts
     assert "10" in texts
     assert "Ввести число" in texts
+
+
+def test_edit_filter_menu_keyboard_has_filter_options() -> None:
+    """Меню редактирования фильтра содержит кнопки Город, Комнаты, Цена и т.д."""
+    kb = edit_filter_menu_keyboard()
+    texts = [btn.text for row in kb.inline_keyboard for btn in row]
+
+    assert "Город" in texts
+    assert "Комнаты" in texts
+    assert "Цена" in texts
+    assert "← К фильтрам" in texts
+
+
+def test_edit_filter_single_button_keyboard_has_edit_button() -> None:
+    """Кнопка «Изменить фильтр» для cmd_filters."""
+    kb = edit_filter_single_button_keyboard()
+    texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    callback_datas = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+
+    assert any("Изменить фильтр" in t for t in texts)
+    assert "edit_filter:menu" in callback_datas
 
 
 def test_confirm_keyboard_has_start_and_restart() -> None:

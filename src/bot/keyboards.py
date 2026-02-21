@@ -241,6 +241,44 @@ def initial_listings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+# ── Редактирование фильтра ─────────────────────────────────────────
+
+EDIT_FILTER_OPTIONS = [
+    ("city", "Город"),
+    ("rooms", "Комнаты"),
+    ("price", "Цена"),
+    ("area", "Площадь"),
+    ("kitchen", "Кухня"),
+    ("renovation", "Ремонт"),
+    ("pets", "Животные"),
+    ("commission", "Комиссия"),
+    ("tolerance", "Допуск"),
+    ("initial_listings", "Показать сразу"),
+]
+
+
+def edit_filter_menu_keyboard() -> InlineKeyboardMarkup:
+    """Меню выбора фильтра для изменения."""
+    buttons: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for key, label in EDIT_FILTER_OPTIONS:
+        row.append(InlineKeyboardButton(text=label, callback_data=f"edit_filter:{key}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton(text="← К фильтрам", callback_data="edit_filter:back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def edit_filter_single_button_keyboard() -> InlineKeyboardMarkup:
+    """Одна кнопка «Изменить фильтр» для cmd_filters."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Изменить фильтр", callback_data="edit_filter:menu")],
+    ])
+
+
 # ── Подтверждение ──────────────────────────────────────────────────
 
 def confirm_keyboard() -> InlineKeyboardMarkup:

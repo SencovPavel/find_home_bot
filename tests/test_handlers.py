@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -81,29 +82,90 @@ class DummyMessage:
         self.answers.append(text)
 
 
+@pytest.fixture
+def mock_db() -> MagicMock:
+    """Мок БД для тестов handlers с db."""
+    return MagicMock()
+
+
 @pytest.mark.asyncio
-async def test_on_price_custom_max_rejects_when_max_less_than_min() -> None:
+async def test_on_price_custom_max_rejects_when_max_less_than_min(mock_db: MagicMock) -> None:
     """Не принимает диапазон, где максимум меньше минимума."""
     state = DummyState(data={"price_min": 100_000})
     message = DummyMessage(user_id=9001, text="50 000")
 
-    await handlers.on_price_custom_max(message, state)  # type: ignore[arg-type]
+    await handlers.on_price_custom_max(message, state, mock_db)  # type: ignore[arg-type]
 
     assert "Максимальная цена должна быть больше или равна минимальной." in message.answers
     assert "price_max" not in state.data
 
 
 @pytest.mark.asyncio
-async def test_on_price_custom_max_happy_path_updates_state() -> None:
+async def test_on_price_custom_max_happy_path_updates_state(mock_db: MagicMock) -> None:
     """На валидном вводе сохраняет значение и переводит на следующий шаг."""
     state = DummyState(data={"price_min": 50_000})
     message = DummyMessage(user_id=9002, text="120000")
 
-    await handlers.on_price_custom_max(message, state)  # type: ignore[arg-type]
+    await handlers.on_price_custom_max(message, state, mock_db)  # type: ignore[arg-type]
 
     assert state.data["price_max"] == 120000
     assert state.current_state == handlers.SearchWizard.area
     assert any("Шаг 4/" in text for text in message.answers)
+
+
+def test_user_filter_to_fsm_data_roundtrip() -> None:
+    """_user_filter_to_fsm_data и _fsm_data_to_user_filter работают корректно."""
+    from src.parser.models import UserFilter
+
+    f = UserFilter(
+        user_id=1,
+        city=2,
+        rooms=[2, 3],
+        price_min=50_000,
+        price_max=150_000,
+        area_min=40.0,
+        kitchen_area_min=8.0,
+        renovation_types=["euro"],
+        pets_allowed=True,
+        no_commission=True,
+        tolerance_percent=10,
+        initial_listings_count=5,
+    )
+    data = handlers._user_filter_to_fsm_data(f)
+    assert data["city"] == 2
+    assert data["rooms"] == [2, 3]
+    assert data["price_min"] == 50_000
+    assert data["no_commission"] is True
+
+    updated = handlers._fsm_data_to_user_filter(
+        {**data, "rooms": [1, 2]}, f, user_id=1, edit_field="rooms"
+    )
+    assert updated.rooms == [1, 2]
+    assert updated.city == 2
+    assert updated.price_min == 50_000
+
+
+@pytest.mark.asyncio
+async def test_cmd_filters_returns_message_with_keyboard(mock_db: MagicMock) -> None:
+    """cmd_filters возвращает сообщение с inline-клавиатурой."""
+    from src.parser.models import UserFilter
+
+    mock_db.get_filter = AsyncMock(
+        return_value=UserFilter(
+            user_id=100,
+            city=1,
+            rooms=[2],
+            price_min=0,
+            price_max=100_000,
+            is_active=True,
+        ),
+    )
+    message = DummyMessage(user_id=100, text="/filters")
+
+    await handlers.cmd_filters(message, mock_db)  # type: ignore[arg-type]
+
+    assert len(message.answers) == 1
+    assert "фильтры" in message.answers[0].lower() or "активен" in message.answers[0].lower()
 
 
 @pytest.mark.asyncio
