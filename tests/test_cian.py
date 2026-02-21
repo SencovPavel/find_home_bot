@@ -157,7 +157,7 @@ def test_parse_listings_empty_page() -> None:
 
 def test_build_search_url_basic_params() -> None:
     """URL содержит обязательные параметры поиска."""
-    user_filter = UserFilter(user_id=1, city=1, rooms=[2], price_max=100_000)
+    user_filter = UserFilter(user_id=1, cities=[1], rooms=[2], price_max=100_000)
 
     url = build_search_url(user_filter, page=1)
 
@@ -172,7 +172,7 @@ def test_build_search_url_with_all_filters() -> None:
     """URL учитывает все фильтры пользователя."""
     user_filter = UserFilter(
         user_id=1,
-        city=2,
+        cities=[2],
         rooms=[1, 3],
         price_min=50_000,
         price_max=150_000,

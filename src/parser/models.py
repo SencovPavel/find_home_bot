@@ -90,7 +90,7 @@ class UserFilter:
     """Фильтры пользователя для поиска квартиры."""
 
     user_id: int
-    city: int = 1  # 1 = Москва, 2 = СПб
+    cities: List[int] = field(default_factory=lambda: [1])  # список ID городов/регионов
     district: str = ""
     metro: str = ""
     price_min: int = 0

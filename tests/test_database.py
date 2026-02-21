@@ -16,7 +16,7 @@ async def test_database_upsert_and_get_filter(temp_db_path: str) -> None:
     try:
         user_filter = UserFilter(
             user_id=11,
-            city=2,
+            cities=[2],
             rooms=[1, 2],
             price_min=40_000,
             price_max=90_000,
@@ -72,7 +72,7 @@ async def test_database_initial_listings_count_round_trip(temp_db_path: str) -> 
     try:
         user_filter = UserFilter(
             user_id=15,
-            city=1,
+            cities=[1],
             initial_listings_count=10,
             is_active=True,
         )
@@ -92,7 +92,7 @@ async def test_database_tolerance_and_commission_round_trip(temp_db_path: str) -
     try:
         user_filter = UserFilter(
             user_id=13,
-            city=1,
+            cities=[1],
             price_max=120_000,
             commission_max_percent=0,
             tolerance_percent=15,

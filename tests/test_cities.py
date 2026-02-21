@@ -5,6 +5,8 @@ from __future__ import annotations
 from src.data.cities import (
     CITIES,
     City,
+    get_cities_by_ids,
+    get_cities_display,
     get_city_by_id,
     get_city_name,
     get_millioner_cities,
@@ -70,6 +72,37 @@ def test_search_cities_by_prefix() -> None:
     """Поиск по началу названия находит города."""
     results = search_cities("Моск")
     assert any(c.name == "Москва" for c in results)
+
+
+def test_search_cities_finds_moscow_oblast() -> None:
+    """Поиск «Московская» находит Московскую область."""
+    results = search_cities("Московская")
+    names = [c.name for c in results]
+    assert "Московская область" in names
+
+
+def test_moscow_oblast_has_cian_region_4593() -> None:
+    """Московская область (id=171) имеет cian_region=4593."""
+    city = get_city_by_id(171)
+    assert city is not None
+    assert city.name == "Московская область"
+    assert city.cian_region == 4593
+    assert city.slug == "moskovskaya_oblast"
+
+
+def test_get_cities_display() -> None:
+    """get_cities_display формирует строку из нескольких городов."""
+    assert get_cities_display([1]) == "Москва"
+    assert get_cities_display([1, 171]) == "Москва, Московская область"
+    assert get_cities_display([]) == "—"
+
+
+def test_get_cities_by_ids() -> None:
+    """get_cities_by_ids возвращает список City по ID."""
+    cities = get_cities_by_ids([1, 2, 99999])
+    assert len(cities) == 2
+    assert cities[0].name == "Москва"
+    assert cities[1].name == "Санкт-Петербург"
 
 
 def test_search_cities_by_substring() -> None:

@@ -38,7 +38,7 @@ def sample_filter() -> UserFilter:
     """Возвращает тестовый фильтр пользователя."""
     return UserFilter(
         user_id=42,
-        city=1,
+        cities=[1],
         price_min=50_000,
         price_max=150_000,
         area_min=40.0,

@@ -26,10 +26,19 @@ _RENOVATION_MAP: Dict[str, str] = {
 }
 
 
-def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
-    """Формирует URL поиска Авито для длительной аренды квартир."""
-    city = get_city_by_id(user_filter.city)
-    city_slug = city.slug if city else "moskva"
+def build_search_url(
+    user_filter: UserFilter,
+    page: int = 1,
+    *,
+    city_slug: str | None = None,
+) -> str:
+    """Формирует URL поиска Авито для длительной аренды квартир.
+
+    Если city_slug задан — используется он, иначе slug первого города из user_filter.cities.
+    """
+    if city_slug is None:
+        city = get_city_by_id(user_filter.cities[0]) if user_filter.cities else None
+        city_slug = city.slug if city else "moskva"
     base = f"https://www.avito.ru/{city_slug}/kvartiry/sdam/na_dlitelnyy_srok"
 
     params: Dict[str, object] = {}
@@ -274,44 +283,59 @@ def _parse_from_html_cards(soup: BeautifulSoup) -> List[Listing]:
     return listings
 
 
+def _unique_city_slugs(user_filter: UserFilter) -> List[str]:
+    """Возвращает уникальные slug для выбранных городов."""
+    seen: set[str] = set()
+    result: List[str] = []
+    for city_id in user_filter.cities or [1]:
+        city = get_city_by_id(city_id)
+        if city and city.slug not in seen:
+            seen.add(city.slug)
+            result.append(city.slug)
+    return result if result else ["moskva"]
+
+
 async def search_listings(
     user_filter: UserFilter,
     pages: int = 2,
 ) -> List[Listing]:
-    """Выполняет поиск по Авито и возвращает список объявлений."""
+    """Выполняет поиск по Авито и возвращает список объявлений (по всем выбранным городам)."""
     all_listings: List[Listing] = []
+    seen_ids: set[int] = set()
+    slugs = _unique_city_slugs(user_filter)
 
     async with aiohttp.ClientSession() as session:
-        for page in range(1, pages + 1):
-            url = build_search_url(user_filter, page=page)
-            logger.info("Запрос Авито: %s", url)
+        for city_slug in slugs:
+            for page in range(1, pages + 1):
+                url = build_search_url(user_filter, page=page, city_slug=city_slug)
+                logger.info("Запрос Авито (%s): %s", city_slug, url)
 
-            html = await fetch_page(
-                session, url,
-                referer="https://www.avito.ru/",
-                delay_range=(3.0, 8.0),
-            )
-            if not html:
-                logger.warning("Авито страница %d: пустой ответ (возможна captcha/блокировка)", page)
-                break
+                html = await fetch_page(
+                    session, url,
+                    referer="https://www.avito.ru/",
+                    delay_range=(3.0, 8.0),
+                )
+                if not html:
+                    logger.warning("Авито %s стр.%d: пустой ответ", city_slug, page)
+                    break
 
-            soup = BeautifulSoup(html, "lxml")
+                soup = BeautifulSoup(html, "lxml")
 
-            json_data = _extract_json_data(soup)
-            if json_data:
-                page_listings = _parse_from_json(json_data)
-            else:
-                page_listings = _parse_from_html_cards(soup)
+                json_data = _extract_json_data(soup)
+                if json_data:
+                    page_listings = _parse_from_json(json_data)
+                else:
+                    page_listings = _parse_from_html_cards(soup)
 
-            all_listings.extend(page_listings)
-            logger.info("Авито страница %d: найдено %d объявлений", page, len(page_listings))
+                for lst in page_listings:
+                    if lst.listing_id not in seen_ids:
+                        seen_ids.add(lst.listing_id)
+                        all_listings.append(lst)
+                logger.info("Авито %s стр.%d: найдено %d объявлений", city_slug, page, len(page_listings))
 
-            if not page_listings:
-                if page == 1:
-                    logger.warning(
-                        "Авито: 0 объявлений на первой странице — "
-                        "вероятно, данные загружаются через JS (требуется headless-браузер)"
-                    )
-                break
+                if not page_listings:
+                    if page == 1:
+                        logger.warning("Авито %s: 0 объявлений на первой странице", city_slug)
+                    break
 
     return all_listings

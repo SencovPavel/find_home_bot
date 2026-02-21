@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS seen_listings (
 
 _MIGRATIONS = [
     "ALTER TABLE user_filters ADD COLUMN no_commission INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE user_filters ADD COLUMN cities TEXT NOT NULL DEFAULT '[1]'",
+    "UPDATE user_filters SET cities = json_array(city)",
     "ALTER TABLE seen_listings ADD COLUMN source TEXT NOT NULL DEFAULT 'cian'",
     "ALTER TABLE seen_listings RENAME COLUMN cian_id TO listing_id",
     "ALTER TABLE user_filters ADD COLUMN tolerance_percent INTEGER NOT NULL DEFAULT 0",
@@ -102,16 +104,19 @@ class Database:
 
     async def upsert_filter(self, f: UserFilter) -> None:
         """Создаёт или обновляет фильтры пользователя."""
+        cities_json = json.dumps(sorted(f.cities))
+        city_legacy = f.cities[0] if f.cities else 1
         await self.db.execute(
             """
             INSERT INTO user_filters
-                (user_id, city, district, metro, price_min, price_max,
+                (user_id, city, cities, district, metro, price_min, price_max,
                  area_min, kitchen_area_min, renovation_types, rooms,
                  pets_allowed, no_commission, commission_max_percent, tolerance_percent,
                  initial_listings_count, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 city = excluded.city,
+                cities = excluded.cities,
                 district = excluded.district,
                 metro = excluded.metro,
                 price_min = excluded.price_min,
@@ -129,7 +134,8 @@ class Database:
             """,
             (
                 f.user_id,
-                f.city,
+                city_legacy,
+                cities_json,
                 f.district,
                 f.metro,
                 f.price_min,
@@ -192,9 +198,16 @@ class Database:
 
 
 def _row_to_filter(row: aiosqlite.Row) -> UserFilter:
+    if "cities" in row.keys() and row["cities"]:
+        try:
+            cities = json.loads(row["cities"])
+        except (json.JSONDecodeError, TypeError):
+            cities = [row["city"]]
+    else:
+        cities = [row["city"]]
     return UserFilter(
         user_id=row["user_id"],
-        city=row["city"],
+        cities=cities,
         district=row["district"],
         metro=row["metro"],
         price_min=row["price_min"],

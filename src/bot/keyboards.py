@@ -6,34 +6,50 @@ from typing import List
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from src.data.cities import City, get_millioner_cities
+from src.data.cities import City, get_city_by_id, get_millioner_cities
 
 BACK_BUTTON = InlineKeyboardButton(text="← Назад", callback_data="back")
+
+MAX_CITIES_SELECT = 10
 
 # ── Города ─────────────────────────────────────────────────────────
 
 
-def city_millioners_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура быстрого выбора городов-миллионников (2 кнопки в ряд)."""
+def city_millioners_keyboard(selected: list[int] | None = None) -> InlineKeyboardMarkup:
+    """Клавиатура мультивыбора городов: миллионники + области + Готово."""
+    selected = selected or []
     cities = get_millioner_cities()
     buttons: List[List[InlineKeyboardButton]] = []
     row: List[InlineKeyboardButton] = []
     for c in cities:
-        row.append(InlineKeyboardButton(text=c.name, callback_data=f"city:{c.id}"))
+        mark = "✓ " if c.id in selected else ""
+        row.append(InlineKeyboardButton(text=f"{mark}{c.name}", callback_data=f"city:{c.id}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
+    for region_id in (171, 172):
+        r = get_city_by_id(region_id)
+        if r:
+            mark = "✓ " if r.id in selected else ""
+            buttons.append([InlineKeyboardButton(text=f"{mark}{r.name}", callback_data=f"city:{r.id}")])
+    buttons.append([InlineKeyboardButton(text="Готово →", callback_data="city:done")])
+    buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def city_search_results_keyboard(cities: List[City]) -> InlineKeyboardMarkup:
-    """Динамическая клавиатура из результатов поиска городов."""
-    buttons = [
-        [InlineKeyboardButton(text=c.name, callback_data=f"city:{c.id}")]
-        for c in cities
-    ]
+def city_search_results_keyboard(
+    cities: List[City],
+    selected: list[int] | None = None,
+) -> InlineKeyboardMarkup:
+    """Динамическая клавиатура из результатов поиска (мультивыбор)."""
+    selected = selected or []
+    buttons = []
+    for c in cities:
+        mark = "✓ " if c.id in selected else ""
+        buttons.append([InlineKeyboardButton(text=f"{mark}{c.name}", callback_data=f"city:{c.id}")])
+    buttons.append([InlineKeyboardButton(text="Готово →", callback_data="city:done")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

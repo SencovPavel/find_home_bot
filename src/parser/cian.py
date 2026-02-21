@@ -27,10 +27,19 @@ _RENOVATION_MAP: Dict[str, str] = {
 }
 
 
-def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
-    """Формирует URL поиска ЦИАН из пользовательских фильтров."""
-    city = get_city_by_id(user_filter.city)
-    cian_region = city.cian_region if city else user_filter.city
+def build_search_url(
+    user_filter: UserFilter,
+    page: int = 1,
+    *,
+    cian_region: int | None = None,
+) -> str:
+    """Формирует URL поиска ЦИАН из пользовательских фильтров.
+
+    Если cian_region задан — используется он, иначе берётся первый город из user_filter.cities.
+    """
+    if cian_region is None:
+        city = get_city_by_id(user_filter.cities[0]) if user_filter.cities else None
+        cian_region = city.cian_region if city else 1
     params: dict[str, object] = {
         "deal_type": "rent",
         "offer_type": "flat",
@@ -277,27 +286,45 @@ def _parse_from_html_cards(soup: BeautifulSoup) -> List[Listing]:
     return listings
 
 
+def _unique_cian_regions(user_filter: UserFilter) -> List[int]:
+    """Возвращает уникальные cian_region для выбранных городов."""
+    seen: set[int] = set()
+    result: List[int] = []
+    for city_id in user_filter.cities or [1]:
+        city = get_city_by_id(city_id)
+        if city and city.cian_region not in seen:
+            seen.add(city.cian_region)
+            result.append(city.cian_region)
+    return result if result else [1]
+
+
 async def search_listings(
     user_filter: UserFilter,
     pages: int = 2,
 ) -> List[Listing]:
-    """Выполняет поиск по ЦИАН и возвращает список объявлений."""
+    """Выполняет поиск по ЦИАН и возвращает список объявлений (по всем выбранным регионам)."""
     all_listings: List[Listing] = []
+    seen_ids: set[int] = set()
+    regions = _unique_cian_regions(user_filter)
 
     async with aiohttp.ClientSession() as session:
-        for page in range(1, pages + 1):
-            url = build_search_url(user_filter, page=page)
-            logger.info("Запрос ЦИАН: %s", url)
+        for cian_region in regions:
+            for page in range(1, pages + 1):
+                url = build_search_url(user_filter, page=page, cian_region=cian_region)
+                logger.info("Запрос ЦИАН (region=%s): %s", cian_region, url)
 
-            html = await fetch_page(session, url, referer="https://www.cian.ru/")
-            if not html:
-                continue
+                html = await fetch_page(session, url, referer="https://www.cian.ru/")
+                if not html:
+                    continue
 
-            page_listings = parse_listings_from_html(html)
-            all_listings.extend(page_listings)
-            logger.info("ЦИАН страница %d: найдено %d объявлений", page, len(page_listings))
+                page_listings = parse_listings_from_html(html)
+                for lst in page_listings:
+                    if lst.listing_id not in seen_ids:
+                        seen_ids.add(lst.listing_id)
+                        all_listings.append(lst)
+                logger.info("ЦИАН region=%s стр.%d: найдено %d объявлений", cian_region, page, len(page_listings))
 
-            if not page_listings:
-                break
+                if not page_listings:
+                    break
 
     return all_listings

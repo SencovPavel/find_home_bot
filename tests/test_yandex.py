@@ -250,7 +250,7 @@ def test_parse_rooms_key_unknown() -> None:
 
 def test_build_search_url_moscow() -> None:
     """URL для Москвы содержит правильный slug и параметры."""
-    user_filter = UserFilter(user_id=1, city=1, rooms=[2], price_max=100_000)
+    user_filter = UserFilter(user_id=1, cities=[1], rooms=[2], price_max=100_000)
 
     url = build_search_url(user_filter, page=1)
 
@@ -262,7 +262,7 @@ def test_build_search_url_moscow() -> None:
 
 def test_build_search_url_spb() -> None:
     """URL для СПб содержит правильный slug."""
-    user_filter = UserFilter(user_id=1, city=2)
+    user_filter = UserFilter(user_id=1, cities=[2])
 
     url = build_search_url(user_filter, page=1)
 
@@ -271,7 +271,7 @@ def test_build_search_url_spb() -> None:
 
 def test_build_search_url_no_commission() -> None:
     """При commission_max_percent=0 добавляется hasAgentFee=NO."""
-    user_filter = UserFilter(user_id=1, city=1, commission_max_percent=0)
+    user_filter = UserFilter(user_id=1, cities=[1], commission_max_percent=0)
 
     url = build_search_url(user_filter, page=1)
 
@@ -282,7 +282,7 @@ def test_build_search_url_all_filters() -> None:
     """URL учитывает все фильтры пользователя."""
     user_filter = UserFilter(
         user_id=1,
-        city=1,
+        cities=[1],
         rooms=[1, 3],
         price_min=40_000,
         price_max=120_000,
@@ -302,7 +302,7 @@ def test_build_search_url_all_filters() -> None:
 
 def test_build_search_url_page_1_no_page_param() -> None:
     """На первой странице параметр page не добавляется."""
-    user_filter = UserFilter(user_id=1, city=1)
+    user_filter = UserFilter(user_id=1, cities=[1])
 
     url = build_search_url(user_filter, page=1)
 
@@ -311,7 +311,7 @@ def test_build_search_url_page_1_no_page_param() -> None:
 
 def test_build_search_url_rooms_multiple() -> None:
     """Несколько типов комнат объединяются через запятую."""
-    user_filter = UserFilter(user_id=1, city=1, rooms=[1, 2, 3])
+    user_filter = UserFilter(user_id=1, cities=[1], rooms=[1, 2, 3])
 
     url = build_search_url(user_filter, page=1)
 

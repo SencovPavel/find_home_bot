@@ -22,7 +22,7 @@ from src.data.cities import City
 
 
 def test_city_search_results_keyboard_shows_found_cities() -> None:
-    """Клавиатура результатов поиска отображает переданные города."""
+    """Клавиатура результатов поиска отображает переданные города и Готово."""
     cities = [
         City(1, "Москва", 1, "moskva"),
         City(2, "Санкт-Петербург", 2, "sankt-peterburg"),
@@ -30,33 +30,38 @@ def test_city_search_results_keyboard_shows_found_cities() -> None:
     kb = city_search_results_keyboard(cities)
     texts = [btn.text for row in kb.inline_keyboard for btn in row]
 
-    assert texts == ["Москва", "Санкт-Петербург"]
+    assert "Москва" in texts
+    assert "Санкт-Петербург" in texts
+    assert "Готово →" in texts
 
 
 def test_city_search_results_keyboard_callback_data() -> None:
-    """Callback data содержит ID города."""
+    """Callback data содержит ID города и city:done."""
     cities = [City(42, "Тестград", 100, "testgrad")]
     kb = city_search_results_keyboard(cities)
     data = [btn.callback_data for row in kb.inline_keyboard for btn in row]
 
-    assert data == ["city:42"]
+    assert "city:42" in data
+    assert "city:done" in data
 
 
 def test_city_search_results_keyboard_empty_list() -> None:
-    """Пустой список городов — пустая клавиатура."""
+    """Пустой список городов — только кнопка Готово."""
     kb = city_search_results_keyboard([])
-    assert kb.inline_keyboard == []
+    texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert "Готово →" in texts
 
 
 def test_city_millioners_keyboard_has_top_cities() -> None:
-    """Клавиатура городов-миллионников содержит Москву, СПб, Новосибирск."""
+    """Клавиатура городов содержит Москву, СПб, Московскую область и Готово."""
     kb = city_millioners_keyboard()
     texts = [btn.text for row in kb.inline_keyboard for btn in row]
 
     assert "Москва" in texts
     assert "Санкт-Петербург" in texts
     assert "Новосибирск" in texts
-    assert "Екатеринбург" in texts
+    assert "Московская область" in texts
+    assert "Готово →" in texts
 
 
 def test_city_millioners_keyboard_two_per_row() -> None:

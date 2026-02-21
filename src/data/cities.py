@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -194,6 +194,8 @@ CITIES: Tuple[City, ...] = (
     City(168, "Магас", 4755, "magas"),
     City(169, "Элиста", 4767, "elista"),
     City(170, "Биробиджан", 5151, "birobidzhan"),
+    City(171, "Московская область", 4593, "moskovskaya_oblast"),
+    City(172, "Ленинградская область", 4834, "leningradskaya_oblast"),
 )
 
 _CITY_BY_ID: Dict[int, City] = {c.id: c for c in CITIES}
@@ -221,6 +223,17 @@ def get_city_name(city_id: int) -> str:
     """Возвращает название города по ID. Для неизвестных — '—'."""
     city = _CITY_BY_ID.get(city_id)
     return city.name if city else "—"
+
+
+def get_cities_by_ids(ids: Iterable[int]) -> List[City]:
+    """Возвращает список городов по списку ID. Неизвестные ID пропускаются."""
+    return [c for i in ids if (c := _CITY_BY_ID.get(i)) is not None]
+
+
+def get_cities_display(ids: List[int]) -> str:
+    """Формирует строку для отображения списка городов (напр. «Москва, Московская область»)."""
+    names = [get_city_name(i) for i in ids if get_city_by_id(i)]
+    return ", ".join(names) if names else "—"
 
 
 def search_cities(query: str, limit: int = 8) -> List[City]:

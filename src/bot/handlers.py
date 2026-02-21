@@ -14,6 +14,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from src.bot.keyboards import (
+    MAX_CITIES_SELECT,
     RENOVATION_OPTIONS,
     area_keyboard,
     city_millioners_keyboard,
@@ -30,7 +31,7 @@ from src.bot.keyboards import (
     rooms_keyboard,
     tolerance_keyboard,
 )
-from src.data.cities import get_city_by_id, get_city_name, search_cities
+from src.data.cities import get_city_by_id, get_cities_display, get_city_name, search_cities
 from src.parser.models import RenovationType, UserFilter
 from src.scheduler.monitor import send_initial_listings
 
@@ -102,6 +103,7 @@ async def cmd_search(
         return
     await state.clear()
     await state.update_data(
+        cities=[],
         rooms=[],
         renovation_types=[],
     )
@@ -132,9 +134,12 @@ async def on_city_text(message: Message, state: FSMContext) -> None:
         )
         return
 
+    data = await state.get_data()
+    selected = data.get("cities", [])
+
     await message.answer(
-        f"🏙 Найдено городов: <b>{len(found)}</b>. Выберите из списка:",
-        reply_markup=city_search_results_keyboard(found),
+        f"🏙 Найдено городов: <b>{len(found)}</b>. Выберите из списка или введите «Готово» после выбора:",
+        reply_markup=city_search_results_keyboard(found, selected),
         parse_mode="HTML",
     )
 
@@ -147,6 +152,28 @@ async def on_city(callback: CallbackQuery, state: FSMContext, db: Database) -> N
     if parts is None:
         await _reject_bad_callback(callback)
         return
+    data = await state.get_data()
+    cities: list[int] = data.get("cities", [])
+
+    if parts[1] == "done":
+        if not cities:
+            await callback.answer("Выберите хотя бы один город", show_alert=True)
+            return
+        if edit_field := data.get("edit_filter"):
+            await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
+            await callback.answer()
+            return
+        cities_text = get_cities_display(cities)
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            f"🏙 Города: <b>{cities_text}</b>\n\n"
+            f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
+            reply_markup=rooms_keyboard(),
+            parse_mode="HTML",
+        )
+        await state.set_state(SearchWizard.rooms)
+        await callback.answer()
+        return
+
     city_id = _parse_int_in_range(parts[1], minimum=1, maximum=10_000)
     if city_id is None:
         await _reject_bad_callback(callback)
@@ -155,21 +182,24 @@ async def on_city(callback: CallbackQuery, state: FSMContext, db: Database) -> N
     if city is None:
         await _reject_bad_callback(callback, text="Город не найден.")
         return
-    await state.update_data(city=city_id)
 
-    data = await state.get_data()
-    if edit_field := data.get("edit_filter"):
-        await _save_edit_filter_and_show(callback, state, db, callback.from_user.id, edit_field)
-        await callback.answer()
-        return
+    if city_id in cities:
+        cities = [c for c in cities if c != city_id]
+    else:
+        if len(cities) >= MAX_CITIES_SELECT:
+            await callback.answer(f"Максимум {MAX_CITIES_SELECT} городов", show_alert=True)
+            return
+        cities = sorted(cities + [city_id])
+    await state.update_data(cities=cities)
 
+    cities_text = get_cities_display(cities) if cities else "Не выбрано"
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"🏙 Город: <b>{city.name}</b>\n\n"
-        f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
-        reply_markup=rooms_keyboard(),
+        f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Выберите города\n\n"
+        f"Выбрано: <b>{cities_text}</b>\n"
+        "Добавьте ещё или нажмите Готово:",
+        reply_markup=city_millioners_keyboard(cities),
         parse_mode="HTML",
     )
-    await state.set_state(SearchWizard.rooms)
     await callback.answer()
 
 
@@ -735,20 +765,20 @@ async def on_back(callback: CallbackQuery, state: FSMContext, db: Database) -> N
 
     if current == SearchWizard.rooms.state:
         await state.set_state(SearchWizard.city)
+        cities = data.get("cities", [])
         await msg.edit_text(
-            f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Выберите город из списка или введите название",
-            reply_markup=city_millioners_keyboard(),
+            f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Выберите города из списка или введите название",
+            reply_markup=city_millioners_keyboard(cities),
             parse_mode="HTML",
         )
     elif current == SearchWizard.price.state:
         rooms = data.get("rooms", [])
         rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
-        city_id = data.get("city", 1)
-        city = get_city_by_id(city_id)
-        city_name = city.name if city else str(city_id)
+        cities = data.get("cities", [1])
+        cities_text = get_cities_display(cities)
         await state.set_state(SearchWizard.rooms)
         await msg.edit_text(
-            f"🏙 Город: <b>{city_name}</b>\n\n"
+            f"🏙 Города: <b>{cities_text}</b>\n\n"
             f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
             reply_markup=rooms_keyboard(rooms),
             parse_mode="HTML",
@@ -859,7 +889,7 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
 
     user_filter = UserFilter(
         user_id=user_id,
-        city=data.get("city", 1),
+        cities=data.get("cities", [1]),
         rooms=data.get("rooms", []),
         price_min=data.get("price_min", 0),
         price_max=data.get("price_max", 0),
@@ -1006,21 +1036,20 @@ async def on_edit_filter_select(callback: CallbackQuery, state: FSMContext, db: 
 
     if edit_field == "city":
         await state.set_state(SearchWizard.city)
-        city = get_city_by_id(user_filter.city)
-        city_name = city.name if city else str(user_filter.city)
+        cities_text = get_cities_display(user_filter.cities)
         await msg.edit_text(
-            f"✏️ <b>Изменить город</b>\n\nТекущий: {city_name}\n\n"
+            f"✏️ <b>Изменить города</b>\n\nТекущие: {cities_text}\n\n"
             f"Выберите из списка или введите название:",
-            reply_markup=city_millioners_keyboard(),
+            reply_markup=city_millioners_keyboard(user_filter.cities),
             parse_mode="HTML",
         )
     elif edit_field == "rooms":
         await state.set_state(SearchWizard.rooms)
         rooms_text = ", ".join(f"{r}-комн." for r in sorted(user_filter.rooms)) if user_filter.rooms else "Любые"
-        city = get_city_by_id(user_filter.city)
-        city_name = city.name if city else str(user_filter.city)
+        cities_text = get_cities_display(user_filter.cities)
         await msg.edit_text(
-            f"✏️ <b>Изменить комнаты</b>\n\nТекущие: {rooms_text}\n\n"
+            f"✏️ <b>Изменить комнаты</b>\n\n"
+            f"Города: {cities_text}\nТекущие комнаты: {rooms_text}\n\n"
             f"Выберите количество комнат:",
             reply_markup=rooms_keyboard(user_filter.rooms),
             parse_mode="HTML",
@@ -1176,7 +1205,8 @@ def _build_summary(data: dict) -> str:
     """Строит текстовое описание фильтров из FSM-данных."""
     lines: list[str] = []
 
-    lines.append(f"🏙 Город: {get_city_name(data.get('city', 1))}")
+    cities = data.get("cities", [1])
+    lines.append(f"🏙 Города: {get_cities_display(cities)}")
 
     rooms = data.get("rooms", [])
     if rooms:
@@ -1223,7 +1253,7 @@ def _build_summary(data: dict) -> str:
 def _build_summary_from_filter(f: UserFilter) -> str:
     """Строит текстовое описание фильтров из UserFilter."""
     return _build_summary({
-        "city": f.city,
+        "cities": f.cities,
         "rooms": f.rooms,
         "price_min": f.price_min,
         "price_max": f.price_max,
@@ -1240,7 +1270,7 @@ def _build_summary_from_filter(f: UserFilter) -> str:
 def _user_filter_to_fsm_data(f: UserFilter) -> dict:
     """Преобразует UserFilter в словарь для state.update_data."""
     return {
-        "city": f.city,
+        "cities": f.cities,
         "rooms": f.rooms,
         "price_min": f.price_min,
         "price_max": f.price_max,
@@ -1263,7 +1293,7 @@ def _fsm_data_to_user_filter(
 
     return UserFilter(
         user_id=user_id,
-        city=g("city", 1) if edit_field == "city" else base.city,
+        cities=g("cities", [1]) if edit_field == "city" else base.cities,
         rooms=g("rooms", []) if edit_field == "rooms" else base.rooms,
         price_min=g("price_min", 0) if edit_field in ("price", "price_custom") else base.price_min,
         price_max=g("price_max", 0) if edit_field in ("price", "price_custom") else base.price_max,

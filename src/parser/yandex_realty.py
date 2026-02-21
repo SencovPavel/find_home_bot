@@ -36,10 +36,19 @@ ROOMS_PARAM_MAP: Dict[int, str] = {
 }
 
 
-def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
-    """Формирует URL поиска Яндекс Недвижимости для длительной аренды квартир."""
-    city = get_city_by_id(user_filter.city)
-    city_slug = city.slug if city else "moskva"
+def build_search_url(
+    user_filter: UserFilter,
+    page: int = 1,
+    *,
+    city_slug: str | None = None,
+) -> str:
+    """Формирует URL поиска Яндекс Недвижимости для длительной аренды квартир.
+
+    Если city_slug задан — используется он, иначе slug первого города из user_filter.cities.
+    """
+    if city_slug is None:
+        city = get_city_by_id(user_filter.cities[0]) if user_filter.cities else None
+        city_slug = city.slug if city else "moskva"
     base = f"{_BASE_URL}/{city_slug}/snyat/kvartira/"
 
     params: Dict[str, object] = {
@@ -305,38 +314,56 @@ def _parse_from_html_cards(soup: BeautifulSoup) -> List[Listing]:
     return listings
 
 
+def _unique_city_slugs(user_filter: UserFilter) -> List[str]:
+    """Возвращает уникальные slug для выбранных городов."""
+    seen: set[str] = set()
+    result: List[str] = []
+    for city_id in user_filter.cities or [1]:
+        city = get_city_by_id(city_id)
+        if city and city.slug not in seen:
+            seen.add(city.slug)
+            result.append(city.slug)
+    return result if result else ["moskva"]
+
+
 async def search_listings(
     user_filter: UserFilter,
     pages: int = 2,
 ) -> List[Listing]:
-    """Выполняет поиск по Яндекс Недвижимости и возвращает список объявлений."""
+    """Выполняет поиск по Яндекс Недвижимости (по всем выбранным городам)."""
     all_listings: List[Listing] = []
+    seen_ids: set[int] = set()
+    slugs = _unique_city_slugs(user_filter)
 
     async with aiohttp.ClientSession() as session:
-        for page in range(1, pages + 1):
-            url = build_search_url(user_filter, page=page)
-            logger.info("Запрос Яндекс Недвижимость: %s", url)
+        for city_slug in slugs:
+            for page in range(1, pages + 1):
+                url = build_search_url(user_filter, page=page, city_slug=city_slug)
+                logger.info("Запрос Яндекс Недвижимость (%s): %s", city_slug, url)
 
-            html = await fetch_page(
-                session, url,
-                referer="https://realty.yandex.ru/",
-                delay_range=(2.0, 7.0),
-            )
-            if not html:
-                continue
+                html = await fetch_page(
+                    session, url,
+                    referer="https://realty.yandex.ru/",
+                    delay_range=(2.0, 7.0),
+                )
+                if not html:
+                    continue
 
-            soup = BeautifulSoup(html, "lxml")
+                soup = BeautifulSoup(html, "lxml")
 
-            json_data = _extract_json_data(soup)
-            if json_data:
-                page_listings = _parse_from_json(json_data)
-            else:
-                page_listings = _parse_from_html_cards(soup)
+                json_data = _extract_json_data(soup)
+                if json_data:
+                    page_listings = _parse_from_json(json_data)
+                else:
+                    page_listings = _parse_from_html_cards(soup)
 
-            all_listings.extend(page_listings)
-            logger.info("Яндекс страница %d: найдено %d объявлений", page, len(page_listings))
+                for lst in page_listings:
+                    if lst.listing_id not in seen_ids:
+                        seen_ids.add(lst.listing_id)
+                        all_listings.append(lst)
+                logger.info("Яндекс %s стр.%d: найдено %d объявлений", city_slug, page, len(page_listings))
 
-            if not page_listings:
-                break
+                if not page_listings:
+                    break
 
     return all_listings

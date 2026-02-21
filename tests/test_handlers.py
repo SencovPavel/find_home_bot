@@ -119,7 +119,7 @@ def test_user_filter_to_fsm_data_roundtrip() -> None:
 
     f = UserFilter(
         user_id=1,
-        city=2,
+        cities=[2],
         rooms=[2, 3],
         price_min=50_000,
         price_max=150_000,
@@ -132,7 +132,7 @@ def test_user_filter_to_fsm_data_roundtrip() -> None:
         initial_listings_count=5,
     )
     data = handlers._user_filter_to_fsm_data(f)
-    assert data["city"] == 2
+    assert data["cities"] == [2]
     assert data["rooms"] == [2, 3]
     assert data["price_min"] == 50_000
     assert data["commission_max_percent"] == 30
@@ -141,7 +141,7 @@ def test_user_filter_to_fsm_data_roundtrip() -> None:
         {**data, "rooms": [1, 2]}, f, user_id=1, edit_field="rooms"
     )
     assert updated.rooms == [1, 2]
-    assert updated.city == 2
+    assert updated.cities == [2]
     assert updated.price_min == 50_000
     assert updated.commission_max_percent == 30
 
@@ -154,7 +154,7 @@ async def test_cmd_filters_returns_message_with_keyboard(mock_db: MagicMock) -> 
     mock_db.get_filter = AsyncMock(
         return_value=UserFilter(
             user_id=100,
-            city=1,
+            cities=[1],
             rooms=[2],
             price_min=0,
             price_max=100_000,
