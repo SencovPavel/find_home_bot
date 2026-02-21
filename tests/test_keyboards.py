@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.bot.keyboards import (
     area_keyboard,
+    city_millioners_keyboard,
     city_search_results_keyboard,
     commission_keyboard,
     confirm_keyboard,
@@ -42,6 +43,24 @@ def test_city_search_results_keyboard_empty_list() -> None:
     """Пустой список городов — пустая клавиатура."""
     kb = city_search_results_keyboard([])
     assert kb.inline_keyboard == []
+
+
+def test_city_millioners_keyboard_has_top_cities() -> None:
+    """Клавиатура городов-миллионников содержит Москву, СПб, Новосибирск."""
+    kb = city_millioners_keyboard()
+    texts = [btn.text for row in kb.inline_keyboard for btn in row]
+
+    assert "Москва" in texts
+    assert "Санкт-Петербург" in texts
+    assert "Новосибирск" in texts
+    assert "Екатеринбург" in texts
+
+
+def test_city_millioners_keyboard_two_per_row() -> None:
+    """Города-миллионники расположены по 2 кнопки в ряд."""
+    kb = city_millioners_keyboard()
+    for row in kb.inline_keyboard:
+        assert len(row) <= 2
 
 
 def test_rooms_keyboard_marks_selected() -> None:

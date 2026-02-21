@@ -15,6 +15,7 @@ from aiogram.types import CallbackQuery, Message
 from src.bot.keyboards import (
     RENOVATION_OPTIONS,
     area_keyboard,
+    city_millioners_keyboard,
     city_search_results_keyboard,
     commission_keyboard,
     confirm_keyboard,
@@ -97,7 +98,8 @@ async def cmd_search(
         renovation_types=[],
     )
     await message.answer(
-        f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Введите название города",
+        f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Выберите город из списка или введите название",
+        reply_markup=city_millioners_keyboard(),
         parse_mode="HTML",
     )
     await state.set_state(SearchWizard.city)

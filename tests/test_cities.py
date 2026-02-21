@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from src.data.cities import CITIES, City, get_city_by_id, get_city_name, search_cities
+from src.data.cities import (
+    CITIES,
+    City,
+    get_city_by_id,
+    get_city_name,
+    get_millioner_cities,
+    search_cities,
+)
 
 
 def test_cities_tuple_is_not_empty() -> None:
@@ -14,6 +21,16 @@ def test_all_cities_have_unique_ids() -> None:
     """Все ID городов уникальны."""
     ids = [c.id for c in CITIES]
     assert len(ids) == len(set(ids))
+
+
+def test_get_millioner_cities_contains_top_cities() -> None:
+    """Города-миллионники включают Москву, СПб, Новосибирск."""
+    millioners = get_millioner_cities()
+    names = [c.name for c in millioners]
+    assert "Москва" in names
+    assert "Санкт-Петербург" in names
+    assert "Новосибирск" in names
+    assert len(millioners) >= 10
 
 
 def test_moscow_is_id_1() -> None:

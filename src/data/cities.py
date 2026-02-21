@@ -198,6 +198,15 @@ CITIES: Tuple[City, ...] = (
 
 _CITY_BY_ID: Dict[int, City] = {c.id: c for c in CITIES}
 
+# Города с населением > 1 млн (id 1–16 в текущем справочнике)
+MILLIONER_CITY_IDS: Tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+
+
+def get_millioner_cities() -> List[City]:
+    """Возвращает города-миллионники для быстрого выбора."""
+    return [c for c in CITIES if c.id in MILLIONER_CITY_IDS]
+
+
 _CITY_NAMES_LOWER: List[tuple[str, City]] = [
     (c.name.lower(), c) for c in CITIES
 ]

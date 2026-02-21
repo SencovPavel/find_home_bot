@@ -6,9 +6,24 @@ from typing import List
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from src.data.cities import City
+from src.data.cities import City, get_millioner_cities
 
 # ── Города ─────────────────────────────────────────────────────────
+
+
+def city_millioners_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура быстрого выбора городов-миллионников (2 кнопки в ряд)."""
+    cities = get_millioner_cities()
+    buttons: List[List[InlineKeyboardButton]] = []
+    row: List[InlineKeyboardButton] = []
+    for c in cities:
+        row.append(InlineKeyboardButton(text=c.name, callback_data=f"city:{c.id}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def city_search_results_keyboard(cities: List[City]) -> InlineKeyboardMarkup:
