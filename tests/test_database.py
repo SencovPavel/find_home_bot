@@ -62,3 +62,57 @@ async def test_database_active_and_seen_flow(temp_db_path: str) -> None:
         await db.cleanup_old(days=0)
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_database_tolerance_and_commission_round_trip(temp_db_path: str) -> None:
+    """Поля tolerance_percent и no_commission корректно сохраняются и читаются."""
+    db = Database(temp_db_path)
+    await db.connect()
+    try:
+        user_filter = UserFilter(
+            user_id=13,
+            city=1,
+            price_max=120_000,
+            no_commission=True,
+            tolerance_percent=15,
+            is_active=True,
+        )
+        await db.upsert_filter(user_filter)
+
+        loaded = await db.get_filter(13)
+        assert loaded is not None
+        assert loaded.no_commission is True
+        assert loaded.tolerance_percent == 15
+        assert loaded.is_active is True
+
+        user_filter.tolerance_percent = 0
+        user_filter.no_commission = False
+        await db.upsert_filter(user_filter)
+
+        reloaded = await db.get_filter(13)
+        assert reloaded is not None
+        assert reloaded.tolerance_percent == 0
+        assert reloaded.no_commission is False
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_database_seen_with_different_sources(temp_db_path: str) -> None:
+    """Пометка 'просмотрено' разделена по источникам."""
+    db = Database(temp_db_path)
+    await db.connect()
+    try:
+        user_filter = UserFilter(user_id=14, is_active=True)
+        await db.upsert_filter(user_filter)
+
+        await db.mark_seen("cian", 100, 14)
+        assert await db.is_seen("cian", 100, 14) is True
+        assert await db.is_seen("yandex", 100, 14) is False
+        assert await db.is_seen("avito", 100, 14) is False
+
+        await db.mark_seen("yandex", 100, 14)
+        assert await db.is_seen("yandex", 100, 14) is True
+    finally:
+        await db.close()

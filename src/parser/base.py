@@ -21,7 +21,16 @@ USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
 ]
 
-MAX_HTML_SIZE_BYTES = 5_000_000
+MAX_HTML_SIZE_BYTES = 10_000_000
+
+_CAPTCHA_MARKERS = (
+    "captcha",
+    "showcaptcha",
+    "challenge-platform",
+    "cf-challenge",
+    "please verify",
+    "проверка",
+)
 
 
 class ListingParser(Protocol):
@@ -65,13 +74,23 @@ async def fetch_page(
                     logger.warning("Слишком большой ответ (%s байт): %s", content_length, url)
                     return None
             body = await resp.text()
-            if len(body.encode("utf-8")) > MAX_HTML_SIZE_BYTES:
-                logger.warning("Слишком большой HTML (%d байт): %s", len(body.encode("utf-8")), url)
+            body_bytes = len(body.encode("utf-8"))
+            if body_bytes > MAX_HTML_SIZE_BYTES:
+                logger.warning("Слишком большой HTML (%d байт): %s", body_bytes, url)
+                return None
+            if is_captcha_page(body):
+                logger.warning("Обнаружена captcha/challenge: %s", url)
                 return None
             return body
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
         logger.error("Ошибка запроса %s: %s", url, exc)
         return None
+
+
+def is_captcha_page(html: str) -> bool:
+    """Эвристика: проверяет, является ли страница captcha / challenge."""
+    lower = html[:5000].lower()
+    return any(marker in lower for marker in _CAPTCHA_MARKERS)
 
 
 def parse_float(value: object) -> float:

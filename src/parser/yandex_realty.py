@@ -16,7 +16,7 @@ from src.parser.models import Listing, MetroTransport, Source, UserFilter
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://realty.ya.ru"
+_BASE_URL = "https://realty.yandex.ru"
 
 CITY_SLUG_MAP: Dict[int, str] = {
     1: "moskva",
@@ -43,7 +43,7 @@ ROOMS_PARAM_MAP: Dict[int, str] = {
 def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
     """Формирует URL поиска Яндекс Недвижимости для длительной аренды квартир."""
     city_slug = CITY_SLUG_MAP.get(user_filter.city, "moskva")
-    base = f"{_BASE_URL}/{city_slug}/snyat/kvartira/dlitelnaya-arenda/"
+    base = f"{_BASE_URL}/{city_slug}/snyat/kvartira/"
 
     params: Dict[str, object] = {
         "sort": "DATE_DESC",
@@ -76,53 +76,47 @@ def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
 
 
 def _extract_json_data(soup: BeautifulSoup) -> dict | None:
-    """Извлекает JSON с данными объявлений из HTML Яндекс Недвижимости."""
+    """Извлекает JSON из window.INITIAL_STATE на странице Яндекс Недвижимости."""
     for script in soup.find_all("script"):
         text = script.string or ""
+        if "window.INITIAL_STATE" not in text:
+            continue
 
-        if "__realty_data__" in text or "initialState" in text:
-            match = re.search(
-                r"(?:window\.__realty_data__|window\.__initialState__)\s*=\s*(\{.*?\});\s*(?:</|$|\n)",
-                text,
-                re.DOTALL,
-            )
-            if match:
-                try:
-                    return json.loads(match.group(1))
-                except json.JSONDecodeError:
-                    pass
+        match = re.match(
+            r"window\.INITIAL_STATE\s*=\s*(\{.*\})\s*;?\s*$",
+            text,
+            re.DOTALL,
+        )
+        if not match:
+            continue
 
-        if '"offers"' in text or '"snippets"' in text:
-            match = re.search(r'"(?:offers|snippets)"\s*:\s*(\[.*?\])\s*[,}]', text, re.DOTALL)
-            if match:
-                try:
-                    return {"offers": json.loads(match.group(1))}
-                except json.JSONDecodeError:
-                    pass
-
-    ld_scripts = soup.find_all("script", {"type": "application/ld+json"})
-    for ld in ld_scripts:
         try:
-            data = json.loads(ld.string or "")
-            if isinstance(data, dict) and data.get("@type") == "ItemList":
-                return data
+            return json.loads(match.group(1))
         except json.JSONDecodeError:
+            logger.debug("Не удалось распарсить INITIAL_STATE Яндекс Недвижимости")
             continue
 
     return None
 
 
 def _parse_from_json(data: dict) -> List[Listing]:
-    """Парсит объявления из JSON-данных Яндекс Недвижимости."""
+    """Парсит объявления из INITIAL_STATE Яндекс Недвижимости.
+
+    Основной путь: data['search']['offers']['entities'].
+    """
     listings: List[Listing] = []
+    offers: list = []
 
-    offers = data.get("offers") or data.get("snippets") or []
+    search = data.get("search")
+    if isinstance(search, dict):
+        search_offers = search.get("offers")
+        if isinstance(search_offers, dict):
+            offers = search_offers.get("entities", [])
+        elif isinstance(search_offers, list):
+            offers = search_offers
 
-    if isinstance(data.get("search"), dict):
-        offers = data["search"].get("offers", [])
-
-    if isinstance(data.get("itemListElement"), list):
-        offers = data["itemListElement"]
+    if not offers:
+        offers = data.get("offers") or data.get("snippets") or []
 
     for offer in offers:
         try:
@@ -137,8 +131,8 @@ def _parse_from_json(data: dict) -> List[Listing]:
 
 
 def _offer_to_listing(offer: dict) -> Listing | None:
-    """Преобразует JSON-объект Яндекс Недвижимости в Listing."""
-    raw_id = offer.get("offerId") or offer.get("id") or offer.get("offerID")
+    """Преобразует JSON-объект из INITIAL_STATE Яндекс Недвижимости в Listing."""
+    raw_id = offer.get("offerId") or offer.get("id")
     if not raw_id:
         return None
 
@@ -147,9 +141,9 @@ def _offer_to_listing(offer: dict) -> Listing | None:
     except (ValueError, TypeError):
         return None
 
-    price_info = offer.get("price") or offer.get("priceInfo") or {}
+    price_info = offer.get("price") or {}
     if isinstance(price_info, dict):
-        price = int(price_info.get("value", 0) or price_info.get("rur", 0))
+        price = int(price_info.get("value", 0))
     else:
         price = int(parse_float(price_info))
 
@@ -157,66 +151,54 @@ def _offer_to_listing(offer: dict) -> Listing | None:
     agent_fee = offer.get("agentFee")
     if agent_fee is not None:
         commission = "без комиссии" if str(agent_fee) == "0" else f"{agent_fee}%"
-    elif offer.get("hasAgentFee") is False:
-        commission = "без комиссии"
-    elif offer.get("commissioningType") == "noAgent":
+    elif offer.get("notForAgents") is True:
         commission = "без комиссии"
 
-    location = offer.get("location") or offer.get("geo") or {}
-    address_parts: list[str] = []
-    if isinstance(location.get("address"), str):
-        address_parts.append(location["address"])
-    elif isinstance(location.get("geocoderAddress"), str):
-        address_parts.append(location["geocoderAddress"])
-    else:
-        for comp in location.get("addressComponents") or location.get("address", []):
-            if isinstance(comp, dict):
-                address_parts.append(comp.get("value", "") or comp.get("name", ""))
-    address = ", ".join(p for p in address_parts if p)
+    location = offer.get("location") or {}
+    address = location.get("address", "") or location.get("geocoderAddress", "")
 
     metro_station = ""
     metro_distance = 0
     metro_transport = MetroTransport.WALK
-    metros = location.get("metro") or location.get("stations") or offer.get("metro") or []
-    if isinstance(metros, list) and metros:
-        nearest = metros[0]
-        metro_station = nearest.get("name", "") or nearest.get("stationName", "")
-        metro_distance = int(nearest.get("timeOnFoot", 0) or nearest.get("time", 0))
-        if nearest.get("timeOnTransport") and not nearest.get("timeOnFoot"):
-            metro_distance = int(nearest["timeOnTransport"])
+    metro_info = location.get("metro")
+    if isinstance(metro_info, dict):
+        metro_station = metro_info.get("name", "")
+        metro_distance = int(metro_info.get("timeToMetro", 0))
+        transport_type = metro_info.get("metroTransport", "ON_FOOT")
+        if transport_type == "ON_TRANSPORT":
             metro_transport = MetroTransport.TRANSPORT
-    elif isinstance(metros, dict):
-        metro_station = metros.get("name", "")
-        metro_distance = int(metros.get("timeOnFoot", 0) or metros.get("time", 0))
 
     area_info = offer.get("area") or {}
-    total_area = parse_float(area_info.get("value") if isinstance(area_info, dict) else offer.get("totalArea"))
-    kitchen_area = parse_float(offer.get("kitchenSpace") or offer.get("kitchenArea"))
-    rooms = int(offer.get("roomsTotal") or offer.get("roomsCount") or 0)
-    floor_val = int(offer.get("floorsOffered", [0])[0] if isinstance(offer.get("floorsOffered"), list) else offer.get("floor", 0))
+    total_area = parse_float(area_info.get("value") if isinstance(area_info, dict) else 0)
+    kitchen_area = parse_float(offer.get("kitchenSpace") or offer.get("kitchenArea") or 0)
+
+    rooms_key = offer.get("roomsTotalKey", "")
+    rooms = _parse_rooms_key(rooms_key) if rooms_key else int(offer.get("roomsTotal") or 0)
+
+    floors_offered = offer.get("floorsOffered")
+    floor_val = int(floors_offered[0]) if isinstance(floors_offered, list) and floors_offered else 0
     total_floors = int(offer.get("floorsTotal") or 0)
 
-    renovation_raw = (offer.get("renovation") or offer.get("repairType") or "").lower()
+    renovation_raw = (offer.get("renovation") or "").lower()
     renovation = _RENOVATION_MAP.get(renovation_raw, renovation_raw)
 
     description = offer.get("description", "")
 
     photos: list[str] = []
-    for photo in (offer.get("images") or offer.get("photos") or [])[:5]:
-        url = ""
-        if isinstance(photo, str):
-            url = photo
-        elif isinstance(photo, dict):
-            url = photo.get("appMiddle") or photo.get("full") or photo.get("url") or ""
-        if url:
-            photos.append(url)
+    for img_url in (offer.get("appLargeImages") or offer.get("fullImages") or [])[:5]:
+        if isinstance(img_url, str) and img_url:
+            full = img_url if img_url.startswith("http") else f"https:{img_url}"
+            photos.append(full)
 
     title = offer.get("title", "")
     if not title:
-        title = f"{rooms}-комн. квартира, {total_area} м²"
+        room_label = "Студия" if rooms == 0 else f"{rooms}-комн. квартира"
+        title = f"{room_label}, {total_area} м²"
 
-    offer_url = offer.get("url") or offer.get("fullUrl") or f"{_BASE_URL}/offer/{raw_id}/"
-    if offer_url.startswith("/"):
+    offer_url = offer.get("url") or f"{_BASE_URL}/offer/{raw_id}/"
+    if offer_url.startswith("//"):
+        offer_url = f"https:{offer_url}"
+    elif offer_url.startswith("/"):
         offer_url = f"{_BASE_URL}{offer_url}"
 
     return Listing(
@@ -239,6 +221,19 @@ def _offer_to_listing(offer: dict) -> Listing | None:
         commission=commission,
         photos=photos,
     )
+
+
+def _parse_rooms_key(key: str) -> int:
+    """Преобразует roomsTotalKey Яндекса (напр. '2', 'STUDIO', 'PLUS_4') в число комнат."""
+    key_upper = key.upper()
+    if key_upper == "STUDIO":
+        return 0
+    if key_upper == "PLUS_4":
+        return 4
+    try:
+        return int(key)
+    except ValueError:
+        return 0
 
 
 def _parse_from_html_cards(soup: BeautifulSoup) -> List[Listing]:
@@ -327,7 +322,7 @@ async def search_listings(
 
             html = await fetch_page(
                 session, url,
-                referer="https://realty.ya.ru/",
+                referer="https://realty.yandex.ru/",
                 delay_range=(2.0, 7.0),
             )
             if not html:

@@ -11,14 +11,12 @@ from urllib.parse import urlencode
 import aiohttp
 from bs4 import BeautifulSoup
 
-from src.parser.base import MAX_HTML_SIZE_BYTES, fetch_page, parse_float
+from src.parser.base import fetch_page, parse_float
 from src.parser.models import Listing, MetroTransport, Source, UserFilter
 
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://www.cian.ru/cat.php"
-MAX_SCRIPT_TEXT_BYTES = 1_000_000
-MAX_JSON_FRAGMENT_BYTES = 1_000_000
 
 _RENOVATION_MAP: Dict[str, str] = {
     "косметический": "cosmetic",
@@ -64,49 +62,48 @@ def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
 
 def parse_listings_from_html(html: str) -> List[Listing]:
     """Извлекает объявления из HTML-страницы ЦИАН."""
-    listings: List[Listing] = []
-    html_bytes = len(html.encode("utf-8"))
-    if html_bytes > MAX_HTML_SIZE_BYTES:
-        logger.warning("HTML превышает лимит (%d байт), парсинг остановлен", html_bytes)
-        return listings
-
     soup = BeautifulSoup(html, "lxml")
 
     json_data = _extract_initial_state(soup)
     if json_data:
-        listings.extend(_parse_from_json(json_data))
-        return listings
+        listings = _parse_from_json(json_data)
+        if listings:
+            return listings
 
-    listings.extend(_parse_from_html_cards(soup))
-    return listings
+    return _parse_from_html_cards(soup)
 
 
 def _extract_initial_state(soup: BeautifulSoup) -> dict | None:
-    """Ищет JSON с данными объявлений в <script> тегах страницы."""
+    """Извлекает JSON с объявлениями из _cianConfig['frontend-serp'].
+
+    ЦИАН хранит данные в формате:
+    window._cianConfig['frontend-serp'] = (...).concat([{key: 'initialState', value: {...}}, ...])
+    Реальные объявления лежат в initialState.results.offers.
+    """
     for script in soup.find_all("script"):
         text = script.string or ""
-        if len(text.encode("utf-8")) > MAX_SCRIPT_TEXT_BYTES:
+        if not text.lstrip().startswith("window._cianConfig"):
             continue
-        if "._cianConfig" in text or "initialState" in text:
-            match = re.search(r"window\._cianConfig\[.*?\]\s*=\s*(\{.*\})", text, re.DOTALL)
-            if match:
-                fragment = match.group(1)
-                if len(fragment.encode("utf-8")) > MAX_JSON_FRAGMENT_BYTES:
-                    continue
-                try:
-                    return json.loads(fragment)
-                except json.JSONDecodeError:
-                    continue
+        if "'frontend-serp'" not in text and '"frontend-serp"' not in text:
+            continue
 
-            match = re.search(r'"offersSerialized"\s*:\s*(\[.*?\])\s*[,}]', text, re.DOTALL)
-            if match:
-                fragment = match.group(1)
-                if len(fragment.encode("utf-8")) > MAX_JSON_FRAGMENT_BYTES:
-                    continue
-                try:
-                    return {"offers": json.loads(fragment)}
-                except json.JSONDecodeError:
-                    continue
+        match = re.search(r"\.concat\((\[.+\])\)\s*;?\s*$", text, re.DOTALL)
+        if not match:
+            continue
+
+        try:
+            config_items = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            logger.debug("Не удалось распарсить concat-массив frontend-serp")
+            continue
+
+        for item in config_items:
+            if not isinstance(item, dict) or item.get("key") != "initialState":
+                continue
+            state = item.get("value")
+            if isinstance(state, dict) and isinstance(state.get("results"), dict):
+                return state
+
     return None
 
 

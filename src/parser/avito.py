@@ -295,7 +295,8 @@ async def search_listings(
                 delay_range=(3.0, 8.0),
             )
             if not html:
-                continue
+                logger.warning("Авито страница %d: пустой ответ (возможна captcha/блокировка)", page)
+                break
 
             soup = BeautifulSoup(html, "lxml")
 
@@ -309,6 +310,11 @@ async def search_listings(
             logger.info("Авито страница %d: найдено %d объявлений", page, len(page_listings))
 
             if not page_listings:
+                if page == 1:
+                    logger.warning(
+                        "Авито: 0 объявлений на первой странице — "
+                        "вероятно, данные загружаются через JS (требуется headless-браузер)"
+                    )
                 break
 
     return all_listings
