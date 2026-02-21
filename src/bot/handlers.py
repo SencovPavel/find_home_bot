@@ -12,12 +12,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
-from src.bot.formatter import format_listing
 from src.bot.keyboards import (
     CITIES,
     RENOVATION_OPTIONS,
     area_keyboard,
     city_keyboard,
+    commission_keyboard,
     confirm_keyboard,
     kitchen_keyboard,
     pets_keyboard,
@@ -38,6 +38,8 @@ MAX_PRICE_RUB = 10_000_000
 RATE_LIMIT_SECONDS = 0.7
 _LAST_REQUEST_TS_BY_USER: dict[int, float] = {}
 
+TOTAL_STEPS = 8
+
 
 class SearchWizard(StatesGroup):
     """Состояния пошагового мастера настройки фильтров."""
@@ -51,6 +53,7 @@ class SearchWizard(StatesGroup):
     kitchen = State()
     renovation = State()
     pets = State()
+    commission = State()
     confirm = State()
 
 
@@ -63,7 +66,7 @@ async def cmd_start(message: Message) -> None:
         return
     await message.answer(
         "<b>Привет! Я бот для поиска квартир в аренду.</b>\n\n"
-        "Я мониторю ЦИАН и отправляю подходящие объявления.\n\n"
+        "Я мониторю ЦИАН, Авито и Яндекс Недвижимость и отправляю подходящие объявления.\n\n"
         "<b>Команды:</b>\n"
         "/search — настроить фильтры и начать поиск\n"
         "/filters — посмотреть текущие фильтры\n"
@@ -91,7 +94,7 @@ async def cmd_search(
         renovation_types=[],
     )
     await message.answer(
-        "🏙 <b>Шаг 1/7:</b> Выберите город",
+        f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Выберите город",
         reply_markup=city_keyboard(),
         parse_mode="HTML",
     )
@@ -117,7 +120,7 @@ async def on_city(callback: CallbackQuery, state: FSMContext) -> None:
     city_name = CITIES.get(city_id, str(city_id))
     await callback.message.edit_text(  # type: ignore[union-attr]
         f"🏙 Город: <b>{city_name}</b>\n\n"
-        "🚪 <b>Шаг 2/7:</b> Выберите количество комнат",
+        f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
         reply_markup=rooms_keyboard(),
         parse_mode="HTML",
     )
@@ -143,7 +146,7 @@ async def on_rooms(callback: CallbackQuery, state: FSMContext) -> None:
         rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
         await callback.message.edit_text(  # type: ignore[union-attr]
             f"🚪 Комнаты: <b>{rooms_text}</b>\n\n"
-            "💰 <b>Шаг 3/7:</b> Выберите ценовой диапазон",
+            f"💰 <b>Шаг 3/{TOTAL_STEPS}:</b> Выберите ценовой диапазон",
             reply_markup=price_keyboard(),
             parse_mode="HTML",
         )
@@ -245,7 +248,7 @@ async def on_price_custom_max(message: Message, state: FSMContext) -> None:
     await state.update_data(price_max=price_max)
     await message.answer(
         f"💰 Цена: <b>{_price_range_text(price_min, price_max)}</b>\n\n"
-        "📐 <b>Шаг 4/7:</b> Минимальная общая площадь",
+        f"📐 <b>Шаг 4/{TOTAL_STEPS}:</b> Минимальная общая площадь",
         reply_markup=area_keyboard(),
         parse_mode="HTML",
     )
@@ -257,7 +260,7 @@ async def _show_area_step(
 ) -> None:
     await callback.message.edit_text(  # type: ignore[union-attr]
         f"💰 Цена: <b>{_price_range_text(price_min, price_max)}</b>\n\n"
-        "📐 <b>Шаг 4/7:</b> Минимальная общая площадь",
+        f"📐 <b>Шаг 4/{TOTAL_STEPS}:</b> Минимальная общая площадь",
         reply_markup=area_keyboard(),
         parse_mode="HTML",
     )
@@ -283,7 +286,7 @@ async def on_area(callback: CallbackQuery, state: FSMContext) -> None:
     area_text = f"от {area} м²" if area else "Не важно"
     await callback.message.edit_text(  # type: ignore[union-attr]
         f"📐 Площадь: <b>{area_text}</b>\n\n"
-        "🍳 <b>Шаг 5/7:</b> Минимальная площадь кухни",
+        f"🍳 <b>Шаг 5/{TOTAL_STEPS}:</b> Минимальная площадь кухни",
         reply_markup=kitchen_keyboard(),
         parse_mode="HTML",
     )
@@ -310,7 +313,7 @@ async def on_kitchen(callback: CallbackQuery, state: FSMContext) -> None:
     kitchen_text = f"от {kitchen} м²" if kitchen else "Не важно"
     await callback.message.edit_text(  # type: ignore[union-attr]
         f"🍳 Кухня: <b>{kitchen_text}</b>\n\n"
-        "🔧 <b>Шаг 6/7:</b> Допустимый тип ремонта",
+        f"🔧 <b>Шаг 6/{TOTAL_STEPS}:</b> Допустимый тип ремонта",
         reply_markup=renovation_keyboard(),
         parse_mode="HTML",
     )
@@ -365,7 +368,7 @@ async def _show_pets_step(
 
     await callback.message.edit_text(  # type: ignore[union-attr]
         f"🔧 Ремонт: <b>{names}</b>\n\n"
-        "🐾 <b>Шаг 7/7:</b> Фильтр по животным",
+        f"🐾 <b>Шаг 7/{TOTAL_STEPS}:</b> Фильтр по животным",
         reply_markup=pets_keyboard(),
         parse_mode="HTML",
     )
@@ -387,6 +390,33 @@ async def on_pets(callback: CallbackQuery, state: FSMContext) -> None:
         return
     pets_allowed = parts[1] == "1"
     await state.update_data(pets_allowed=pets_allowed)
+
+    pets_text = "Скрывать с запретом" if pets_allowed else "Показывать все"
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"🐾 Животные: <b>{pets_text}</b>\n\n"
+        f"💼 <b>Шаг 8/{TOTAL_STEPS}:</b> Фильтр по комиссии",
+        reply_markup=commission_keyboard(),
+        parse_mode="HTML",
+    )
+    await state.set_state(SearchWizard.commission)
+    await callback.answer()
+
+
+# ── Комиссия ───────────────────────────────────────────────────────
+
+@router.callback_query(SearchWizard.commission, F.data.startswith("commission:"))
+async def on_commission(callback: CallbackQuery, state: FSMContext) -> None:
+    if await _is_rate_limited_callback(callback):
+        return
+    parts = _parse_callback_parts(callback.data, "commission", expected_parts=2)
+    if parts is None:
+        await _reject_bad_callback(callback)
+        return
+    if parts[1] not in {"0", "1"}:
+        await _reject_bad_callback(callback)
+        return
+    no_commission = parts[1] == "1"
+    await state.update_data(no_commission=no_commission)
 
     data = await state.get_data()
     summary = _build_summary(data)
@@ -434,6 +464,7 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
         kitchen_area_min=data.get("kitchen_area_min", 0),
         renovation_types=data.get("renovation_types", []),
         pets_allowed=data.get("pets_allowed", True),
+        no_commission=data.get("no_commission", False),
         is_active=True,
     )
 
@@ -442,7 +473,8 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
 
     await callback.message.edit_text(  # type: ignore[union-attr]
         "✅ <b>Мониторинг запущен!</b>\n\n"
-        "Я буду проверять ЦИАН каждые несколько минут и присылать новые объявления.\n\n"
+        "Я буду проверять ЦИАН, Авито и Яндекс Недвижимость "
+        "каждые несколько минут и присылать новые объявления.\n\n"
         "/pause — приостановить\n"
         "/filters — посмотреть фильтры",
         parse_mode="HTML",
@@ -542,6 +574,9 @@ def _build_summary(data: dict) -> str:
     pets = data.get("pets_allowed", True)
     lines.append(f"🐾 Животные: {'Скрывать с запретом' if pets else 'Показывать все'}")
 
+    no_commission = data.get("no_commission", False)
+    lines.append(f"💼 Комиссия: {'Только без комиссии' if no_commission else 'Не важно'}")
+
     return "\n".join(lines)
 
 
@@ -556,6 +591,7 @@ def _build_summary_from_filter(f: UserFilter) -> str:
         "kitchen_area_min": f.kitchen_area_min,
         "renovation_types": f.renovation_types,
         "pets_allowed": f.pets_allowed,
+        "no_commission": f.no_commission,
     })
 
 

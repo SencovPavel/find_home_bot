@@ -155,6 +155,16 @@ def pets_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+# ── Комиссия ───────────────────────────────────────────────────────
+
+def commission_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура: фильтровать объявления по комиссии."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Только без комиссии", callback_data="commission:1")],
+        [InlineKeyboardButton(text="Не важно", callback_data="commission:0")],
+    ])
+
+
 # ── Подтверждение ──────────────────────────────────────────────────
 
 def confirm_keyboard() -> InlineKeyboardMarkup:

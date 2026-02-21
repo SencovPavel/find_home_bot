@@ -7,6 +7,24 @@ from enum import Enum
 from typing import Dict, List
 
 
+class Source(str, Enum):
+    """Площадка-источник объявления."""
+
+    CIAN = "cian"
+    AVITO = "avito"
+    YANDEX = "yandex"
+
+    @classmethod
+    def label(cls, value: str) -> str:
+        """Человекочитаемое название площадки."""
+        labels: Dict[str, str] = {
+            cls.CIAN.value: "ЦИАН",
+            cls.AVITO.value: "Авито",
+            cls.YANDEX.value: "Яндекс Недвижимость",
+        }
+        return labels.get(value, value)
+
+
 class RenovationType(str, Enum):
     """Тип ремонта квартиры."""
 
@@ -46,7 +64,8 @@ class MetroTransport(str, Enum):
 class Listing:
     """Объявление об аренде квартиры."""
 
-    cian_id: int
+    listing_id: int
+    source: Source
     url: str
     title: str
     price: int
@@ -61,6 +80,7 @@ class Listing:
     total_floors: int
     renovation: str
     description: str
+    commission: str = ""
     photos: List[str] = field(default_factory=list)
 
 
@@ -79,6 +99,7 @@ class UserFilter:
     renovation_types: List[str] = field(default_factory=list)
     rooms: List[int] = field(default_factory=list)
     pets_allowed: bool = True
+    no_commission: bool = False
     is_active: bool = False
 
     def matches(self, listing: Listing) -> bool:
@@ -96,6 +117,8 @@ class UserFilter:
         if self.renovation_types and listing.renovation not in self.renovation_types:
             return False
         if self.pets_allowed and _has_pet_ban(listing.description):
+            return False
+        if self.no_commission and _has_commission(listing.commission):
             return False
         return True
 
@@ -116,8 +139,25 @@ _PET_BAN_PHRASES = (
     "животных не заводить",
 )
 
+_NO_COMMISSION_MARKERS = (
+    "без комиссии",
+    "комиссия 0",
+)
+
 
 def _has_pet_ban(description: str) -> bool:
     """Эвристика: проверяет наличие явного запрета на животных в тексте описания."""
     lower = description.lower()
     return any(phrase in lower for phrase in _PET_BAN_PHRASES)
+
+
+def _has_commission(commission: str) -> bool:
+    """Возвращает True, если в объявлении указана комиссия (не 'без комиссии')."""
+    if not commission:
+        return False
+    lower = commission.lower().strip()
+    if lower == "0%" or lower == "0":
+        return False
+    if any(marker in lower for marker in _NO_COMMISSION_MARKERS):
+        return False
+    return True

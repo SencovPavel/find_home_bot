@@ -14,27 +14,35 @@ logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS user_filters (
-    user_id       INTEGER PRIMARY KEY,
-    city          INTEGER NOT NULL DEFAULT 1,
-    district      TEXT    NOT NULL DEFAULT '',
-    metro         TEXT    NOT NULL DEFAULT '',
-    price_min     INTEGER NOT NULL DEFAULT 0,
-    price_max     INTEGER NOT NULL DEFAULT 0,
-    area_min      REAL    NOT NULL DEFAULT 0,
-    kitchen_area_min REAL NOT NULL DEFAULT 0,
-    renovation_types TEXT NOT NULL DEFAULT '[]',
-    rooms         TEXT    NOT NULL DEFAULT '[]',
-    pets_allowed  INTEGER NOT NULL DEFAULT 1,
-    is_active     INTEGER NOT NULL DEFAULT 0
+    user_id          INTEGER PRIMARY KEY,
+    city             INTEGER NOT NULL DEFAULT 1,
+    district         TEXT    NOT NULL DEFAULT '',
+    metro            TEXT    NOT NULL DEFAULT '',
+    price_min        INTEGER NOT NULL DEFAULT 0,
+    price_max        INTEGER NOT NULL DEFAULT 0,
+    area_min         REAL    NOT NULL DEFAULT 0,
+    kitchen_area_min REAL    NOT NULL DEFAULT 0,
+    renovation_types TEXT    NOT NULL DEFAULT '[]',
+    rooms            TEXT    NOT NULL DEFAULT '[]',
+    pets_allowed     INTEGER NOT NULL DEFAULT 1,
+    no_commission    INTEGER NOT NULL DEFAULT 0,
+    is_active        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS seen_listings (
-    cian_id   INTEGER NOT NULL,
-    user_id   INTEGER NOT NULL,
-    sent_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (cian_id, user_id)
+    source     TEXT    NOT NULL DEFAULT 'cian',
+    listing_id INTEGER NOT NULL,
+    user_id    INTEGER NOT NULL,
+    sent_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (source, listing_id, user_id)
 );
 """
+
+_MIGRATIONS = [
+    "ALTER TABLE user_filters ADD COLUMN no_commission INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE seen_listings ADD COLUMN source TEXT NOT NULL DEFAULT 'cian'",
+    "ALTER TABLE seen_listings RENAME COLUMN cian_id TO listing_id",
+]
 
 
 class Database:
@@ -45,12 +53,23 @@ class Database:
         self._db: aiosqlite.Connection | None = None
 
     async def connect(self) -> None:
-        """Открывает соединение и создаёт таблицы при первом запуске."""
+        """Открывает соединение, создаёт таблицы, применяет миграции."""
         self._db = await aiosqlite.connect(self._db_path)
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(_SCHEMA)
         await self._db.commit()
+        await self._apply_migrations()
         logger.info("БД инициализирована: %s", self._db_path)
+
+    async def _apply_migrations(self) -> None:
+        """Применяет миграции для обновления существующих БД."""
+        for sql in _MIGRATIONS:
+            try:
+                await self.db.execute(sql)
+                await self.db.commit()
+                logger.info("Миграция применена: %s", sql[:60])
+            except Exception:
+                pass
 
     async def close(self) -> None:
         if self._db:
@@ -81,8 +100,8 @@ class Database:
             INSERT INTO user_filters
                 (user_id, city, district, metro, price_min, price_max,
                  area_min, kitchen_area_min, renovation_types, rooms,
-                 pets_allowed, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 pets_allowed, no_commission, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 city = excluded.city,
                 district = excluded.district,
@@ -94,6 +113,7 @@ class Database:
                 renovation_types = excluded.renovation_types,
                 rooms = excluded.rooms,
                 pets_allowed = excluded.pets_allowed,
+                no_commission = excluded.no_commission,
                 is_active = excluded.is_active
             """,
             (
@@ -108,6 +128,7 @@ class Database:
                 json.dumps(f.renovation_types),
                 json.dumps(f.rooms),
                 int(f.pets_allowed),
+                int(f.no_commission),
                 int(f.is_active),
             ),
         )
@@ -131,19 +152,19 @@ class Database:
 
     # ── Просмотренные объявления ───────────────────────────────────
 
-    async def is_seen(self, cian_id: int, user_id: int) -> bool:
+    async def is_seen(self, source: str, listing_id: int, user_id: int) -> bool:
         """Проверяет, было ли объявление уже отправлено пользователю."""
         cursor = await self.db.execute(
-            "SELECT 1 FROM seen_listings WHERE cian_id = ? AND user_id = ?",
-            (cian_id, user_id),
+            "SELECT 1 FROM seen_listings WHERE source = ? AND listing_id = ? AND user_id = ?",
+            (source, listing_id, user_id),
         )
         return await cursor.fetchone() is not None
 
-    async def mark_seen(self, cian_id: int, user_id: int) -> None:
+    async def mark_seen(self, source: str, listing_id: int, user_id: int) -> None:
         """Помечает объявление как отправленное пользователю."""
         await self.db.execute(
-            "INSERT OR IGNORE INTO seen_listings (cian_id, user_id) VALUES (?, ?)",
-            (cian_id, user_id),
+            "INSERT OR IGNORE INTO seen_listings (source, listing_id, user_id) VALUES (?, ?, ?)",
+            (source, listing_id, user_id),
         )
         await self.db.commit()
 
@@ -169,5 +190,6 @@ def _row_to_filter(row: aiosqlite.Row) -> UserFilter:
         renovation_types=json.loads(row["renovation_types"]),
         rooms=json.loads(row["rooms"]),
         pets_allowed=bool(row["pets_allowed"]),
+        no_commission=bool(row["no_commission"]),
         is_active=bool(row["is_active"]),
     )

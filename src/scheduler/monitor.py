@@ -1,15 +1,18 @@
-"""Периодическая задача мониторинга: парсинг ЦИАН, фильтрация, отправка новых объявлений."""
+"""Периодическая задача мониторинга: парсинг всех площадок, фильтрация, отправка новых объявлений."""
 
 from __future__ import annotations
 
 import logging
+from typing import List
 
 from aiogram import Bot
 from aiogram.types import InputMediaPhoto
 
 from src.bot.formatter import format_listing
-from src.parser.cian import search_listings
+from src.parser.avito import search_listings as avito_search
+from src.parser.cian import search_listings as cian_search
 from src.parser.models import Listing, UserFilter
+from src.parser.yandex_realty import search_listings as yandex_search
 from src.storage.database import Database
 
 logger = logging.getLogger(__name__)
@@ -37,12 +40,12 @@ async def check_new_listings(bot: Bot, db: Database) -> None:
 
 
 async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None:
-    """Парсит, фильтрует и отправляет новые объявления одному пользователю."""
-    listings = await search_listings(user_filter)
+    """Парсит все площадки, фильтрует и отправляет новые объявления одному пользователю."""
+    listings = await _aggregate_listings(user_filter)
     sent_count = 0
 
     for listing in listings:
-        if await db.is_seen(listing.cian_id, user_filter.user_id):
+        if await db.is_seen(listing.source.value, listing.listing_id, user_filter.user_id):
             continue
 
         if not user_filter.matches(listing):
@@ -50,12 +53,13 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
 
         try:
             await _send_listing(bot, user_filter.user_id, listing)
-            await db.mark_seen(listing.cian_id, user_filter.user_id)
+            await db.mark_seen(listing.source.value, listing.listing_id, user_filter.user_id)
             sent_count += 1
         except Exception:
             logger.exception(
-                "Ошибка при отправке объявления %d пользователю %d",
-                listing.cian_id,
+                "Ошибка при отправке объявления %s:%d пользователю %d",
+                listing.source.value,
+                listing.listing_id,
                 user_filter.user_id,
             )
 
@@ -65,6 +69,25 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
             sent_count,
             user_filter.user_id,
         )
+
+
+async def _aggregate_listings(user_filter: UserFilter) -> List[Listing]:
+    """Собирает объявления со всех площадок."""
+    all_listings: List[Listing] = []
+
+    for name, search_fn in [
+        ("ЦИАН", cian_search),
+        ("Авито", avito_search),
+        ("Яндекс", yandex_search),
+    ]:
+        try:
+            results = await search_fn(user_filter)
+            all_listings.extend(results)
+            logger.info("%s: получено %d объявлений", name, len(results))
+        except Exception:
+            logger.exception("Ошибка при парсинге %s", name)
+
+    return all_listings
 
 
 async def _send_listing(bot: Bot, user_id: int, listing: Listing) -> None:

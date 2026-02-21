@@ -2,53 +2,43 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import random
 import re
-from typing import Sequence
+from typing import Dict, List
 from urllib.parse import urlencode
 
 import aiohttp
 from bs4 import BeautifulSoup
 
-from src.parser.models import Listing, MetroTransport, UserFilter
+from src.parser.base import MAX_HTML_SIZE_BYTES, fetch_page, parse_float
+from src.parser.models import Listing, MetroTransport, Source, UserFilter
 
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://www.cian.ru/cat.php"
-MAX_HTML_SIZE_BYTES = 5_000_000
 MAX_SCRIPT_TEXT_BYTES = 1_000_000
 MAX_JSON_FRAGMENT_BYTES = 1_000_000
 
-_USER_AGENTS = [
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
-]
-
-_RENOVATION_MAP: dict[str, str] = {
+_RENOVATION_MAP: Dict[str, str] = {
     "косметический": "cosmetic",
     "евроремонт": "euro",
     "дизайнерский": "designer",
     "без ремонта": "no_renovation",
 }
 
-CITY_REGION_MAP: dict[int, int] = {
-    1: 1,   # Москва
-    2: 2,   # Санкт-Петербург
+CITY_REGION_MAP: Dict[int, int] = {
+    1: 1,
+    2: 2,
 }
 
 
 def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
     """Формирует URL поиска ЦИАН из пользовательских фильтров."""
-    params: dict[str, str | int] = {
+    params: dict[str, object] = {
         "deal_type": "rent",
         "offer_type": "flat",
-        "type": 4,  # длительная аренда
+        "type": 4,
         "region": CITY_REGION_MAP.get(user_filter.city, user_filter.city),
         "p": page,
         "sort": "creation_date_desc",
@@ -62,61 +52,19 @@ def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
         params["mintarea"] = int(user_filter.area_min)
     if user_filter.kitchen_area_min:
         params["minkarea"] = int(user_filter.kitchen_area_min)
+    if user_filter.no_commission:
+        params["is_by_homeowner"] = 1
 
     if user_filter.rooms:
         for room_count in user_filter.rooms:
-            key = f"room{room_count}"
-            params[key] = 1
+            params[f"room{room_count}"] = 1
 
     return f"{_BASE_URL}?{urlencode(params)}"
 
 
-def _get_headers() -> dict[str, str]:
-    return {
-        "User-Agent": random.choice(_USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Referer": "https://www.cian.ru/",
-    }
-
-
-async def fetch_page(session: aiohttp.ClientSession, url: str) -> str | None:
-    """Загружает HTML-страницу с рандомной задержкой."""
-    delay = random.uniform(2.0, 6.0)
-    await asyncio.sleep(delay)
-
-    try:
-        async with session.get(url, headers=_get_headers(), timeout=aiohttp.ClientTimeout(total=30)) as resp:
-            if resp.status != 200:
-                logger.warning("ЦИАН вернул статус %d для %s", resp.status, url)
-                return None
-            content_length = resp.headers.get("Content-Length")
-            if content_length and content_length.isdigit():
-                if int(content_length) > MAX_HTML_SIZE_BYTES:
-                    logger.warning(
-                        "Слишком большой ответ ЦИАН (%s байт), запрос отклонён",
-                        content_length,
-                    )
-                    return None
-            body = await resp.text()
-            if len(body.encode("utf-8")) > MAX_HTML_SIZE_BYTES:
-                logger.warning("Слишком большой HTML-ответ (%d байт), пропускаем", len(body.encode("utf-8")))
-                return None
-            return body
-    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-        logger.error("Ошибка при запросе %s: %s", url, exc)
-        return None
-
-
-def parse_listings_from_html(html: str) -> list[Listing]:
-    """Извлекает объявления из HTML-страницы ЦИАН.
-
-    ЦИАН встраивает данные в JSON внутри тега <script> с ключом `initialState`
-    или в виде JSON-LD. Парсим оба варианта.
-    """
-    listings: list[Listing] = []
+def parse_listings_from_html(html: str) -> List[Listing]:
+    """Извлекает объявления из HTML-страницы ЦИАН."""
+    listings: List[Listing] = []
     html_bytes = len(html.encode("utf-8"))
     if html_bytes > MAX_HTML_SIZE_BYTES:
         logger.warning("HTML превышает лимит (%d байт), парсинг остановлен", html_bytes)
@@ -144,7 +92,6 @@ def _extract_initial_state(soup: BeautifulSoup) -> dict | None:
             if match:
                 fragment = match.group(1)
                 if len(fragment.encode("utf-8")) > MAX_JSON_FRAGMENT_BYTES:
-                    logger.debug("JSON fragment _cianConfig превышает лимит, пропускаем")
                     continue
                 try:
                     return json.loads(fragment)
@@ -155,7 +102,6 @@ def _extract_initial_state(soup: BeautifulSoup) -> dict | None:
             if match:
                 fragment = match.group(1)
                 if len(fragment.encode("utf-8")) > MAX_JSON_FRAGMENT_BYTES:
-                    logger.debug("JSON fragment offersSerialized превышает лимит, пропускаем")
                     continue
                 try:
                     return {"offers": json.loads(fragment)}
@@ -164,9 +110,9 @@ def _extract_initial_state(soup: BeautifulSoup) -> dict | None:
     return None
 
 
-def _parse_from_json(data: dict) -> list[Listing]:
+def _parse_from_json(data: dict) -> List[Listing]:
     """Парсит объявления из JSON-структуры ЦИАН."""
-    listings: list[Listing] = []
+    listings: List[Listing] = []
 
     offers = data.get("offers") or data.get("offersSerialized") or []
 
@@ -187,12 +133,20 @@ def _parse_from_json(data: dict) -> list[Listing]:
 
 def _offer_to_listing(offer: dict) -> Listing | None:
     """Преобразует JSON-объект offer в Listing."""
-    cian_id = offer.get("cianId") or offer.get("id")
-    if not cian_id:
+    raw_id = offer.get("cianId") or offer.get("id")
+    if not raw_id:
         return None
 
     price_info = offer.get("bargainTerms") or offer.get("priceInfo") or {}
     price = int(price_info.get("price", 0) or price_info.get("priceRur", 0))
+
+    commission = ""
+    agent_fee = price_info.get("agentFee")
+    if agent_fee is not None:
+        commission = "без комиссии" if str(agent_fee) == "0" else f"{agent_fee}%"
+    elif price_info.get("clientFee") is not None:
+        client_fee = str(price_info["clientFee"])
+        commission = "без комиссии" if client_fee == "0" else f"{client_fee}%"
 
     geo = offer.get("geo") or {}
     address_parts: list[str] = []
@@ -212,8 +166,8 @@ def _offer_to_listing(offer: dict) -> Listing | None:
         transport_type = nearest.get("transportType", "walk")
         metro_transport = MetroTransport.TRANSPORT if transport_type == "transport" else MetroTransport.WALK
 
-    total_area = _parse_float(offer.get("totalArea"))
-    kitchen_area = _parse_float(offer.get("kitchenArea"))
+    total_area = parse_float(offer.get("totalArea"))
+    kitchen_area = parse_float(offer.get("kitchenArea"))
     rooms = int(offer.get("roomsCount", 0))
     floor = int(offer.get("floorNumber", 0))
 
@@ -231,10 +185,11 @@ def _offer_to_listing(offer: dict) -> Listing | None:
         if url:
             photos.append(url)
 
-    offer_url = offer.get("fullUrl", f"https://www.cian.ru/rent/flat/{cian_id}/")
+    offer_url = offer.get("fullUrl", f"https://www.cian.ru/rent/flat/{raw_id}/")
 
     return Listing(
-        cian_id=int(cian_id),
+        listing_id=int(raw_id),
+        source=Source.CIAN,
         url=offer_url,
         title=offer.get("title", f"{rooms}-комн. квартира, {total_area} м²"),
         price=price,
@@ -249,13 +204,14 @@ def _offer_to_listing(offer: dict) -> Listing | None:
         total_floors=total_floors,
         renovation=renovation,
         description=description,
+        commission=commission,
         photos=photos,
     )
 
 
-def _parse_from_html_cards(soup: BeautifulSoup) -> list[Listing]:
+def _parse_from_html_cards(soup: BeautifulSoup) -> List[Listing]:
     """Fallback-парсинг из HTML-карточек, если JSON недоступен."""
-    listings: list[Listing] = []
+    listings: List[Listing] = []
 
     cards = soup.select("[data-name='GeneralInfoSectionRowComponent']")
     if not cards:
@@ -268,10 +224,10 @@ def _parse_from_html_cards(soup: BeautifulSoup) -> list[Listing]:
                 continue
 
             href = link_tag.get("href", "")
-            cian_id_match = re.search(r"/flat/(\d+)/", href)
-            if not cian_id_match:
+            id_match = re.search(r"/flat/(\d+)/", href)
+            if not id_match:
                 continue
-            cian_id = int(cian_id_match.group(1))
+            listing_id = int(id_match.group(1))
 
             title = link_tag.get_text(strip=True) or ""
 
@@ -289,9 +245,8 @@ def _parse_from_html_cards(soup: BeautifulSoup) -> list[Listing]:
             if metro_el:
                 metro_station = metro_el.get_text(strip=True)
 
-            area_text = title
             total_area = 0.0
-            area_match = re.search(r"(\d+[.,]?\d*)\s*м", area_text)
+            area_match = re.search(r"(\d+[.,]?\d*)\s*м", title)
             if area_match:
                 total_area = float(area_match.group(1).replace(",", "."))
 
@@ -301,7 +256,8 @@ def _parse_from_html_cards(soup: BeautifulSoup) -> list[Listing]:
                 rooms = int(rooms_match.group(1))
 
             listings.append(Listing(
-                cian_id=cian_id,
+                listing_id=listing_id,
+                source=Source.CIAN,
                 url=str(href),
                 title=title,
                 price=price,
@@ -316,10 +272,11 @@ def _parse_from_html_cards(soup: BeautifulSoup) -> list[Listing]:
                 total_floors=0,
                 renovation="",
                 description="",
+                commission="",
                 photos=[],
             ))
         except (ValueError, AttributeError) as exc:
-            logger.debug("Ошибка парсинга карточки: %s", exc)
+            logger.debug("Ошибка парсинга карточки ЦИАН: %s", exc)
             continue
 
     return listings
@@ -328,33 +285,24 @@ def _parse_from_html_cards(soup: BeautifulSoup) -> list[Listing]:
 async def search_listings(
     user_filter: UserFilter,
     pages: int = 2,
-) -> list[Listing]:
+) -> List[Listing]:
     """Выполняет поиск по ЦИАН и возвращает список объявлений."""
-    all_listings: list[Listing] = []
+    all_listings: List[Listing] = []
 
     async with aiohttp.ClientSession() as session:
         for page in range(1, pages + 1):
             url = build_search_url(user_filter, page=page)
             logger.info("Запрос ЦИАН: %s", url)
 
-            html = await fetch_page(session, url)
+            html = await fetch_page(session, url, referer="https://www.cian.ru/")
             if not html:
                 continue
 
             page_listings = parse_listings_from_html(html)
             all_listings.extend(page_listings)
-            logger.info("Страница %d: найдено %d объявлений", page, len(page_listings))
+            logger.info("ЦИАН страница %d: найдено %d объявлений", page, len(page_listings))
 
             if not page_listings:
                 break
 
     return all_listings
-
-
-def _parse_float(value: object) -> float:
-    if value is None:
-        return 0.0
-    try:
-        return float(str(value).replace(",", "."))
-    except (ValueError, TypeError):
-        return 0.0

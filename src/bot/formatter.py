@@ -5,15 +5,20 @@ from __future__ import annotations
 import html
 from urllib.parse import urlsplit
 
-from src.parser.models import Listing, MetroTransport, RenovationType
+from src.parser.models import Listing, MetroTransport, RenovationType, Source
 
 
 def format_listing(listing: Listing) -> str:
     """Форматирует объявление в HTML-сообщение для Telegram."""
     parts: list[str] = []
 
-    parts.append(f"<b>{_escape(listing.title)}</b>\n")
+    source_label = Source.label(listing.source.value)
+    parts.append(f"<b>{_escape(listing.title)}</b>  [{source_label}]\n")
     parts.append(f"💰 <b>{_format_price(listing.price)}</b> руб/мес")
+
+    if listing.commission:
+        parts.append(f"💼 {_escape(listing.commission)}")
+
     parts.append(f"📍 {_escape(listing.address)}")
 
     if listing.metro_station:
@@ -37,7 +42,7 @@ def format_listing(listing: Listing) -> str:
         parts.append(f"🔧 Ремонт: {RenovationType.label(listing.renovation)}")
 
     parts.append("")
-    parts.append(f'<a href="{_safe_url_attr(listing.url)}">Открыть на ЦИАН</a>')
+    parts.append(f'<a href="{_safe_url_attr(listing.url)}">Открыть на {source_label}</a>')
 
     return "\n".join(parts)
 
@@ -48,7 +53,8 @@ def format_listing_short(listing: Listing) -> str:
     metro = ""
     if listing.metro_station:
         metro = f" | м. {listing.metro_station}"
-    return f"{listing.rooms}-комн., {listing.total_area} м² | {price} ₽{metro}"
+    source = Source.label(listing.source.value)
+    return f"{listing.rooms}-комн., {listing.total_area} м² | {price} ₽{metro} [{source}]"
 
 
 def _format_price(price: int) -> str:

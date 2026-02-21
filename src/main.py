@@ -43,7 +43,7 @@ async def run() -> None:
         "interval",
         minutes=config.check_interval_minutes,
         args=[bot, db],
-        id="cian_monitor",
+        id="rental_monitor",
         replace_existing=True,
     )
     scheduler.start()
