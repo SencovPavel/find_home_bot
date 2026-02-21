@@ -61,5 +61,4 @@ jobs:
           APP_DIR: ${{ secrets.APP_DIR }}
           SYSTEMD_SERVICE: ${{ secrets.SYSTEMD_SERVICE }}
         run: |
-          chmod +x scripts/deploy.sh
-          cat scripts/deploy.sh | ssh -t -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' SYSTEMD_SERVICE='$SYSTEMD_SERVICE' bash -s"
+          ssh -t -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "APP_DIR='$APP_DIR' SYSTEMD_SERVICE='$SYSTEMD_SERVICE' bash -s" < scripts/deploy.sh
