@@ -19,6 +19,8 @@ from src.bot.keyboards import (
     area_keyboard,
     city_millioners_keyboard,
     city_search_results_keyboard,
+    commands_inline_keyboard,
+    commands_reply_keyboard,
     commission_keyboard,
     confirm_keyboard,
     edit_filter_menu_keyboard,
@@ -85,22 +87,16 @@ async def cmd_start(message: Message) -> None:
         "/filters — посмотреть текущие фильтры\n"
         "/pause — приостановить мониторинг\n"
         "/resume — возобновить мониторинг",
+        reply_markup=commands_reply_keyboard(),
         parse_mode="HTML",
     )
+    await message.answer("Быстрые действия:", reply_markup=commands_inline_keyboard())
 
 
 # ── /search — запуск wizard ────────────────────────────────────────
 
-@router.message(Command("search"))
-async def cmd_search(
-    message: Message,
-    state: FSMContext,
-    *,
-    skip_rate_limit: bool = False,
-) -> None:
-    """Начало пошаговой настройки фильтров."""
-    if not skip_rate_limit and await _is_rate_limited_message(message):
-        return
+async def _start_search_wizard(message: Message, state: FSMContext) -> None:
+    """Старт пошаговой настройки фильтров (общая логика для команды и callback)."""
     await state.clear()
     await state.update_data(
         cities=[],
@@ -113,6 +109,19 @@ async def cmd_search(
         parse_mode="HTML",
     )
     await state.set_state(SearchWizard.city)
+
+
+@router.message(Command("search"))
+async def cmd_search(
+    message: Message,
+    state: FSMContext,
+    *,
+    skip_rate_limit: bool = False,
+) -> None:
+    """Начало пошаговой настройки фильтров."""
+    if not skip_rate_limit and await _is_rate_limited_message(message):
+        return
+    await _start_search_wizard(message, state)
 
 
 # ── Город ──────────────────────────────────────────────────────────
@@ -1126,6 +1135,56 @@ async def on_edit_filter_select(callback: CallbackQuery, state: FSMContext, db: 
             reply_markup=initial_listings_keyboard(),
             parse_mode="HTML",
         )
+
+    await callback.answer()
+
+
+# ── nav: callback (inline-кнопки быстрых действий) ──────────────────
+
+@router.callback_query(F.data.startswith("nav:"))
+async def on_nav_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+    db: Database,
+) -> None:
+    """Обработка inline-кнопок навигации (Поиск, Фильтры, Пауза, Возобновить)."""
+    if await _is_rate_limited_callback(callback):
+        return
+    parts = _parse_callback_parts(callback.data, "nav", expected_parts=2)
+    if parts is None or callback.message is None:
+        await callback.answer()
+        return
+
+    action = parts[1]
+    msg = callback.message
+
+    if action == "search":
+        await _start_search_wizard(msg, state)
+    elif action == "filters":
+        user_filter = await db.get_filter(callback.from_user.id)  # type: ignore[union-attr]
+        if user_filter is None:
+            await msg.answer("У вас пока нет фильтров. Используйте /search для настройки.")
+        else:
+            summary = _build_summary_from_filter(user_filter)
+            status = "🟢 Активен" if user_filter.is_active else "🔴 Приостановлен"
+            await msg.answer(
+                f"<b>Ваши фильтры</b> ({status}):\n\n{summary}",
+                reply_markup=edit_filter_single_button_keyboard(),
+                parse_mode="HTML",
+            )
+    elif action == "pause":
+        await db.set_active(callback.from_user.id, active=False)  # type: ignore[union-attr]
+        await msg.answer("⏸ Мониторинг приостановлен. /resume — возобновить.")
+    elif action == "resume":
+        user_filter = await db.get_filter(callback.from_user.id)  # type: ignore[union-attr]
+        if user_filter is None:
+            await msg.answer("Сначала настройте фильтры: /search")
+        else:
+            await db.set_active(callback.from_user.id, active=True)  # type: ignore[union-attr]
+            await msg.answer("▶️ Мониторинг возобновлён!")
+    else:
+        await callback.answer()
+        return
 
     await callback.answer()
 

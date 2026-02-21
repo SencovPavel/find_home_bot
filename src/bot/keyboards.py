@@ -4,13 +4,53 @@ from __future__ import annotations
 
 from typing import List
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 from src.data.cities import City, get_city_by_id, get_millioner_cities
 
 BACK_BUTTON = InlineKeyboardButton(text="← Назад", callback_data="back")
 
 MAX_CITIES_SELECT = 10
+
+
+# ── Навигация по командам ───────────────────────────────────────────
+
+
+def commands_reply_keyboard() -> ReplyKeyboardMarkup:
+    """Reply-клавиатура для навигации по командам (всегда под полем ввода)."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="/search"),
+                KeyboardButton(text="/filters"),
+            ],
+            [
+                KeyboardButton(text="/pause"),
+                KeyboardButton(text="/resume"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+def commands_inline_keyboard() -> InlineKeyboardMarkup:
+    """Inline-кнопки для быстрых действий (под сообщением /start)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🔍 Поиск", callback_data="nav:search"),
+            InlineKeyboardButton(text="📋 Фильтры", callback_data="nav:filters"),
+        ],
+        [
+            InlineKeyboardButton(text="⏸ Пауза", callback_data="nav:pause"),
+            InlineKeyboardButton(text="▶ Возобновить", callback_data="nav:resume"),
+        ],
+    ])
 
 # ── Города ─────────────────────────────────────────────────────────
 

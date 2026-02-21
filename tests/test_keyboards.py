@@ -6,6 +6,8 @@ from src.bot.keyboards import (
     area_keyboard,
     city_millioners_keyboard,
     city_search_results_keyboard,
+    commands_inline_keyboard,
+    commands_reply_keyboard,
     commission_keyboard,
     confirm_keyboard,
     edit_filter_menu_keyboard,
@@ -201,3 +203,34 @@ def test_confirm_keyboard_has_start_and_restart() -> None:
 
     assert "Запустить мониторинг" in texts
     assert "Настроить заново" in texts
+
+
+def test_commands_reply_keyboard_rows() -> None:
+    """Reply-клавиатура навигации: две строки с командами."""
+    kb = commands_reply_keyboard()
+    assert len(kb.keyboard) == 2
+    row1_texts = [btn.text for btn in kb.keyboard[0]]
+    row2_texts = [btn.text for btn in kb.keyboard[1]]
+    assert "/search" in row1_texts
+    assert "/filters" in row1_texts
+    assert "/pause" in row2_texts
+    assert "/resume" in row2_texts
+    assert kb.resize_keyboard is True
+    assert kb.is_persistent is True
+
+
+def test_commands_inline_keyboard_rows() -> None:
+    """Inline-клавиатура быстрых действий: кнопки с nav:callback_data."""
+    kb = commands_inline_keyboard()
+    assert len(kb.inline_keyboard) == 2
+    all_buttons = [btn for row in kb.inline_keyboard for btn in row]
+    callback_data = [btn.callback_data for btn in all_buttons]
+    texts = [btn.text for btn in all_buttons]
+    assert "nav:search" in callback_data
+    assert "nav:filters" in callback_data
+    assert "nav:pause" in callback_data
+    assert "nav:resume" in callback_data
+    assert any("Поиск" in t for t in texts)
+    assert any("Фильтры" in t for t in texts)
+    assert any("Пауза" in t for t in texts)
+    assert any("Возобновить" in t for t in texts)
