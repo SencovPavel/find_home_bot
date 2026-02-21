@@ -101,6 +101,7 @@ class UserFilter:
     pets_allowed: bool = True
     no_commission: bool = False
     tolerance_percent: int = 0
+    initial_listings_count: int = 0  # 0 = отключено, 1-30 = сколько показать сразу при старте
     is_active: bool = False
 
     def matches(self, listing: Listing) -> bool:

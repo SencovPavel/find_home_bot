@@ -87,7 +87,10 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
         )
 
 
-async def _aggregate_listings(user_filter: UserFilter) -> List[Listing]:
+async def _aggregate_listings(
+    user_filter: UserFilter,
+    pages: int = 2,
+) -> List[Listing]:
     """Собирает объявления со всех площадок."""
     all_listings: List[Listing] = []
 
@@ -97,13 +100,80 @@ async def _aggregate_listings(user_filter: UserFilter) -> List[Listing]:
         ("Яндекс", yandex_search),
     ]:
         try:
-            results = await search_fn(user_filter)
+            results = await search_fn(user_filter, pages=pages)
             all_listings.extend(results)
             logger.info("%s: получено %d объявлений", name, len(results))
         except Exception:
             logger.exception("Ошибка при парсинге %s", name)
 
     return all_listings
+
+
+async def send_initial_listings(
+    bot: Bot,
+    db: Database,
+    user_filter: UserFilter,
+) -> int:
+    """Отправляет до initial_listings_count объявлений при старте мониторинга.
+
+    Собирает объявления (1 страница), фильтрует, сортирует (strict, затем approx),
+    отправляет до N штук и помечает как просмотренные.
+    """
+    limit = user_filter.initial_listings_count
+    if limit <= 0:
+        return 0
+
+    try:
+        listings = await _aggregate_listings(user_filter, pages=1)
+    except Exception:
+        logger.exception(
+            "Ошибка при сборе объявлений для начальной выдачи пользователю %d",
+            user_filter.user_id,
+        )
+        return 0
+
+    strict: List[tuple[Listing, Optional[List[str]]]] = []
+    approx: List[tuple[Listing, Optional[List[str]]]] = []
+
+    for listing in listings:
+        if await db.is_seen(
+            listing.source.value, listing.listing_id, user_filter.user_id
+        ):
+            continue
+        if user_filter.matches(listing):
+            strict.append((listing, None))
+        else:
+            deviations = user_filter.matches_approx(listing)
+            if deviations is not None:
+                approx.append((listing, deviations))
+
+    to_send = strict + approx
+    sent = 0
+
+    for listing, deviations in to_send[:limit]:
+        try:
+            await _send_listing(
+                bot, user_filter.user_id, listing, deviations=deviations
+            )
+            await db.mark_seen(
+                listing.source.value, listing.listing_id, user_filter.user_id
+            )
+            sent += 1
+        except Exception:
+            logger.exception(
+                "Ошибка при отправке начального объявления %s:%s пользователю %d",
+                listing.source.value,
+                listing.listing_id,
+                user_filter.user_id,
+            )
+
+    if sent:
+        logger.info(
+            "Пользователь %d: отправлено %d объявлений при старте",
+            user_filter.user_id,
+            sent,
+        )
+    return sent
 
 
 async def _send_listing(

@@ -204,6 +204,32 @@ def tolerance_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+# ── Показать сразу при старте ──────────────────────────────────────
+
+INITIAL_LISTINGS_OPTIONS = [
+    (0, "Отключить"),
+    (5, "5"),
+    (10, "10"),
+    (15, "15"),
+    (20, "20"),
+]
+
+
+def initial_listings_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура: сколько объявлений показать сразу при запуске мониторинга."""
+    buttons = [
+        [InlineKeyboardButton(
+            text=label,
+            callback_data=f"initial_listings:{value}",
+        )]
+        for value, label in INITIAL_LISTINGS_OPTIONS
+    ]
+    buttons.append([
+        InlineKeyboardButton(text="Ввести число", callback_data="initial_listings:custom"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 # ── Подтверждение ──────────────────────────────────────────────────
 
 def confirm_keyboard() -> InlineKeyboardMarkup:

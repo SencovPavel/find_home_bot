@@ -6,6 +6,7 @@ from src.bot.keyboards import (
     area_keyboard,
     city_millioners_keyboard,
     city_search_results_keyboard,
+    initial_listings_keyboard,
     commission_keyboard,
     confirm_keyboard,
     kitchen_keyboard,
@@ -148,6 +149,16 @@ def test_tolerance_keyboard_has_custom_option() -> None:
 
     assert "Ввести свой %" in texts
     assert "Отключить" in texts
+
+
+def test_initial_listings_keyboard_has_options() -> None:
+    """Клавиатура «показать сразу» содержит Отключить, 5, 10 и Ввести число."""
+    kb = initial_listings_keyboard()
+    texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert "Отключить" in texts
+    assert "5" in texts
+    assert "10" in texts
+    assert "Ввести число" in texts
 
 
 def test_confirm_keyboard_has_start_and_restart() -> None:

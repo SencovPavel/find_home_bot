@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -19,6 +20,7 @@ from src.bot.keyboards import (
     city_search_results_keyboard,
     commission_keyboard,
     confirm_keyboard,
+    initial_listings_keyboard,
     kitchen_keyboard,
     pets_keyboard,
     price_keyboard,
@@ -28,6 +30,7 @@ from src.bot.keyboards import (
 )
 from src.data.cities import get_city_by_id, get_city_name, search_cities
 from src.parser.models import RenovationType, UserFilter
+from src.scheduler.monitor import send_initial_listings
 
 if TYPE_CHECKING:
     from src.storage.database import Database
@@ -40,7 +43,7 @@ MAX_PRICE_RUB = 10_000_000
 RATE_LIMIT_SECONDS = 0.7
 _LAST_REQUEST_TS_BY_USER: dict[int, float] = {}
 
-TOTAL_STEPS = 9
+TOTAL_STEPS = 10
 
 
 class SearchWizard(StatesGroup):
@@ -58,6 +61,8 @@ class SearchWizard(StatesGroup):
     commission = State()
     tolerance = State()
     tolerance_text = State()
+    initial_listings = State()
+    initial_listings_text = State()
     confirm = State()
 
 
@@ -488,7 +493,7 @@ async def on_tolerance(callback: CallbackQuery, state: FSMContext) -> None:
         await _reject_bad_callback(callback)
         return
     await state.update_data(tolerance_percent=tolerance)
-    await _show_confirm_step(callback, state)
+    await _show_initial_listings_step(callback, state)
     await callback.answer()
 
 
@@ -503,6 +508,53 @@ async def on_tolerance_text(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(tolerance_percent=tolerance)
+    await message.answer(
+        f"📊 <b>Шаг {TOTAL_STEPS}/{TOTAL_STEPS}:</b> Сколько объявлений показать сразу при запуске?",
+        reply_markup=initial_listings_keyboard(),
+        parse_mode="HTML",
+    )
+    await state.set_state(SearchWizard.initial_listings)
+
+
+@router.callback_query(SearchWizard.initial_listings, F.data.startswith("initial_listings:"))
+async def on_initial_listings(callback: CallbackQuery, state: FSMContext) -> None:
+    if await _is_rate_limited_callback(callback):
+        return
+    parts = _parse_callback_parts(callback.data, "initial_listings", expected_parts=2)
+    if parts is None:
+        await _reject_bad_callback(callback)
+        return
+
+    if parts[1] == "custom":
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            "📋 Введите число объявлений (от 1 до 30).\n"
+            "Столько подходящих объявлений будет отправлено сразу при запуске мониторинга.",
+            parse_mode="HTML",
+        )
+        await state.set_state(SearchWizard.initial_listings_text)
+        await callback.answer()
+        return
+
+    value = _parse_int_in_range(parts[1], minimum=0, maximum=30)
+    if value is None:
+        await _reject_bad_callback(callback)
+        return
+    await state.update_data(initial_listings_count=value)
+    await _show_confirm_step(callback, state)
+    await callback.answer()
+
+
+@router.message(SearchWizard.initial_listings_text)
+async def on_initial_listings_text(message: Message, state: FSMContext) -> None:
+    if await _is_rate_limited_message(message):
+        return
+    raw = (message.text or "").strip()
+    value = _parse_int_in_range(raw, minimum=1, maximum=30)
+    if value is None:
+        await message.answer("Введите число от 1 до 30.")
+        return
+
+    await state.update_data(initial_listings_count=value)
     data = await state.get_data()
     summary = _build_summary(data)
     await message.answer(
@@ -511,6 +563,16 @@ async def on_tolerance_text(message: Message, state: FSMContext) -> None:
         parse_mode="HTML",
     )
     await state.set_state(SearchWizard.confirm)
+
+
+async def _show_initial_listings_step(callback: CallbackQuery, state: FSMContext) -> None:
+    """Показывает шаг выбора количества объявлений при старте."""
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"📋 <b>Шаг {TOTAL_STEPS}/{TOTAL_STEPS}:</b> Сколько объявлений показать сразу при запуске?",
+        reply_markup=initial_listings_keyboard(),
+        parse_mode="HTML",
+    )
+    await state.set_state(SearchWizard.initial_listings)
 
 
 async def _show_confirm_step(callback: CallbackQuery, state: FSMContext) -> None:
@@ -561,6 +623,7 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
         pets_allowed=data.get("pets_allowed", True),
         no_commission=data.get("no_commission", False),
         tolerance_percent=data.get("tolerance_percent", 0),
+        initial_listings_count=data.get("initial_listings_count", 0),
         is_active=True,
     )
 
@@ -576,6 +639,11 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
         parse_mode="HTML",
     )
     await callback.answer("Мониторинг запущен!")
+
+    if user_filter.initial_listings_count > 0:
+        asyncio.create_task(
+            send_initial_listings(callback.bot, db, user_filter)
+        )
 
 
 # ── /filters ───────────────────────────────────────────────────────
@@ -678,6 +746,12 @@ def _build_summary(data: dict) -> str:
     else:
         lines.append("📊 Допуск: Отключён")
 
+    initial_count = data.get("initial_listings_count", 0)
+    if initial_count:
+        lines.append(f"📋 Показать сразу: {initial_count} объявлений")
+    else:
+        lines.append("📋 Показать сразу: отключено")
+
     return "\n".join(lines)
 
 
@@ -694,6 +768,7 @@ def _build_summary_from_filter(f: UserFilter) -> str:
         "pets_allowed": f.pets_allowed,
         "no_commission": f.no_commission,
         "tolerance_percent": f.tolerance_percent,
+        "initial_listings_count": f.initial_listings_count,
     })
 
 

@@ -65,6 +65,26 @@ async def test_database_active_and_seen_flow(temp_db_path: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_database_initial_listings_count_round_trip(temp_db_path: str) -> None:
+    """Поле initial_listings_count сохраняется и читается."""
+    db = Database(temp_db_path)
+    await db.connect()
+    try:
+        user_filter = UserFilter(
+            user_id=15,
+            city=1,
+            initial_listings_count=10,
+            is_active=True,
+        )
+        await db.upsert_filter(user_filter)
+        loaded = await db.get_filter(15)
+        assert loaded is not None
+        assert loaded.initial_listings_count == 10
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
 async def test_database_tolerance_and_commission_round_trip(temp_db_path: str) -> None:
     """Поля tolerance_percent и no_commission корректно сохраняются и читаются."""
     db = Database(temp_db_path)
