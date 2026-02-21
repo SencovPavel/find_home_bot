@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 class Source(str, Enum):
@@ -100,6 +100,7 @@ class UserFilter:
     rooms: List[int] = field(default_factory=list)
     pets_allowed: bool = True
     no_commission: bool = False
+    tolerance_percent: int = 0
     is_active: bool = False
 
     def matches(self, listing: Listing) -> bool:
@@ -121,6 +122,54 @@ class UserFilter:
         if self.no_commission and _has_commission(listing.commission):
             return False
         return True
+
+    def matches_approx(self, listing: Listing) -> Optional[List[str]]:
+        """Проверяет, подходит ли объявление с учётом допуска tolerance_percent.
+
+        Возвращает список отклонений от критериев, если объявление «почти подходит».
+        Возвращает None, если объявление не подходит даже приблизительно.
+        Строгие критерии (комнаты, ремонт, животные, комиссия) проверяются без допуска.
+        """
+        if self.tolerance_percent <= 0:
+            return None
+
+        if self.rooms and listing.rooms not in self.rooms:
+            return None
+        if self.renovation_types and listing.renovation not in self.renovation_types:
+            return None
+        if self.pets_allowed and _has_pet_ban(listing.description):
+            return None
+        if self.no_commission and _has_commission(listing.commission):
+            return None
+
+        factor = self.tolerance_percent / 100
+        deviations: List[str] = []
+
+        if self.price_min and listing.price < self.price_min:
+            under = (self.price_min - listing.price) / self.price_min
+            if under > factor:
+                return None
+            deviations.append(f"Цена ниже на {under:.0%}")
+
+        if self.price_max and listing.price > self.price_max:
+            over = (listing.price - self.price_max) / self.price_max
+            if over > factor:
+                return None
+            deviations.append(f"Цена выше на {over:.0%}")
+
+        if self.area_min and listing.total_area < self.area_min:
+            under = (self.area_min - listing.total_area) / self.area_min
+            if under > factor:
+                return None
+            deviations.append(f"Площадь меньше на {under:.0%}")
+
+        if self.kitchen_area_min and listing.kitchen_area < self.kitchen_area_min:
+            under = (self.kitchen_area_min - listing.kitchen_area) / self.kitchen_area_min
+            if under > factor:
+                return None
+            deviations.append(f"Кухня меньше на {under:.0%}")
+
+        return deviations if deviations else None
 
 
 _PET_BAN_PHRASES = (

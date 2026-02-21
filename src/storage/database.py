@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS user_filters (
     rooms            TEXT    NOT NULL DEFAULT '[]',
     pets_allowed     INTEGER NOT NULL DEFAULT 1,
     no_commission    INTEGER NOT NULL DEFAULT 0,
+    tolerance_percent INTEGER NOT NULL DEFAULT 0,
     is_active        INTEGER NOT NULL DEFAULT 0
 );
 
@@ -42,6 +43,7 @@ _MIGRATIONS = [
     "ALTER TABLE user_filters ADD COLUMN no_commission INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE seen_listings ADD COLUMN source TEXT NOT NULL DEFAULT 'cian'",
     "ALTER TABLE seen_listings RENAME COLUMN cian_id TO listing_id",
+    "ALTER TABLE user_filters ADD COLUMN tolerance_percent INTEGER NOT NULL DEFAULT 0",
 ]
 
 
@@ -100,8 +102,8 @@ class Database:
             INSERT INTO user_filters
                 (user_id, city, district, metro, price_min, price_max,
                  area_min, kitchen_area_min, renovation_types, rooms,
-                 pets_allowed, no_commission, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 pets_allowed, no_commission, tolerance_percent, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 city = excluded.city,
                 district = excluded.district,
@@ -114,6 +116,7 @@ class Database:
                 rooms = excluded.rooms,
                 pets_allowed = excluded.pets_allowed,
                 no_commission = excluded.no_commission,
+                tolerance_percent = excluded.tolerance_percent,
                 is_active = excluded.is_active
             """,
             (
@@ -129,6 +132,7 @@ class Database:
                 json.dumps(f.rooms),
                 int(f.pets_allowed),
                 int(f.no_commission),
+                f.tolerance_percent,
                 int(f.is_active),
             ),
         )
@@ -191,5 +195,6 @@ def _row_to_filter(row: aiosqlite.Row) -> UserFilter:
         rooms=json.loads(row["rooms"]),
         pets_allowed=bool(row["pets_allowed"]),
         no_commission=bool(row["no_commission"]),
+        tolerance_percent=int(row["tolerance_percent"]),
         is_active=bool(row["is_active"]),
     )

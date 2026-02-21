@@ -24,6 +24,7 @@ from src.bot.keyboards import (
     price_keyboard,
     renovation_keyboard,
     rooms_keyboard,
+    tolerance_keyboard,
 )
 from src.parser.models import RenovationType, UserFilter
 
@@ -38,7 +39,7 @@ MAX_PRICE_RUB = 10_000_000
 RATE_LIMIT_SECONDS = 0.7
 _LAST_REQUEST_TS_BY_USER: dict[int, float] = {}
 
-TOTAL_STEPS = 8
+TOTAL_STEPS = 9
 
 
 class SearchWizard(StatesGroup):
@@ -54,6 +55,8 @@ class SearchWizard(StatesGroup):
     renovation = State()
     pets = State()
     commission = State()
+    tolerance = State()
+    tolerance_text = State()
     confirm = State()
 
 
@@ -418,16 +421,80 @@ async def on_commission(callback: CallbackQuery, state: FSMContext) -> None:
     no_commission = parts[1] == "1"
     await state.update_data(no_commission=no_commission)
 
+    commission_text = "Только без комиссии" if no_commission else "Не важно"
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"💼 Комиссия: <b>{commission_text}</b>\n\n"
+        f"📊 <b>Шаг 9/{TOTAL_STEPS}:</b> Допуск для «почти подходящих» объявлений\n"
+        "Если объявление чуть-чуть не попадает в критерии (цена, площадь), "
+        "оно придёт с пометкой.",
+        reply_markup=tolerance_keyboard(),
+        parse_mode="HTML",
+    )
+    await state.set_state(SearchWizard.tolerance)
+    await callback.answer()
+
+
+# ── Допуск (tolerance) ─────────────────────────────────────────────
+
+@router.callback_query(SearchWizard.tolerance, F.data.startswith("tolerance:"))
+async def on_tolerance(callback: CallbackQuery, state: FSMContext) -> None:
+    if await _is_rate_limited_callback(callback):
+        return
+    parts = _parse_callback_parts(callback.data, "tolerance", expected_parts=2)
+    if parts is None:
+        await _reject_bad_callback(callback)
+        return
+
+    if parts[1] == "custom":
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            "📊 Введите допуск в процентах (от 1 до 50).\n"
+            "Например, <b>15</b> — объявления с отклонением до 15% будут приходить с пометкой.",
+            parse_mode="HTML",
+        )
+        await state.set_state(SearchWizard.tolerance_text)
+        await callback.answer()
+        return
+
+    tolerance = _parse_int_in_range(parts[1], minimum=0, maximum=50)
+    if tolerance is None:
+        await _reject_bad_callback(callback)
+        return
+    await state.update_data(tolerance_percent=tolerance)
+    await _show_confirm_step(callback, state)
+    await callback.answer()
+
+
+@router.message(SearchWizard.tolerance_text)
+async def on_tolerance_text(message: Message, state: FSMContext) -> None:
+    if await _is_rate_limited_message(message):
+        return
+    raw = (message.text or "").strip().replace("%", "")
+    tolerance = _parse_int_in_range(raw, minimum=1, maximum=50)
+    if tolerance is None:
+        await message.answer("Введите число от 1 до 50.")
+        return
+
+    await state.update_data(tolerance_percent=tolerance)
     data = await state.get_data()
     summary = _build_summary(data)
+    await message.answer(
+        f"<b>Ваши фильтры:</b>\n\n{summary}",
+        reply_markup=confirm_keyboard(),
+        parse_mode="HTML",
+    )
+    await state.set_state(SearchWizard.confirm)
 
+
+async def _show_confirm_step(callback: CallbackQuery, state: FSMContext) -> None:
+    """Показывает итоговую сводку фильтров и кнопки подтверждения."""
+    data = await state.get_data()
+    summary = _build_summary(data)
     await callback.message.edit_text(  # type: ignore[union-attr]
         f"<b>Ваши фильтры:</b>\n\n{summary}",
         reply_markup=confirm_keyboard(),
         parse_mode="HTML",
     )
     await state.set_state(SearchWizard.confirm)
-    await callback.answer()
 
 
 # ── Подтверждение ──────────────────────────────────────────────────
@@ -465,6 +532,7 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
         renovation_types=data.get("renovation_types", []),
         pets_allowed=data.get("pets_allowed", True),
         no_commission=data.get("no_commission", False),
+        tolerance_percent=data.get("tolerance_percent", 0),
         is_active=True,
     )
 
@@ -577,6 +645,12 @@ def _build_summary(data: dict) -> str:
     no_commission = data.get("no_commission", False)
     lines.append(f"💼 Комиссия: {'Только без комиссии' if no_commission else 'Не важно'}")
 
+    tolerance = data.get("tolerance_percent", 0)
+    if tolerance:
+        lines.append(f"📊 Допуск: {tolerance}%")
+    else:
+        lines.append("📊 Допуск: Отключён")
+
     return "\n".join(lines)
 
 
@@ -592,6 +666,7 @@ def _build_summary_from_filter(f: UserFilter) -> str:
         "renovation_types": f.renovation_types,
         "pets_allowed": f.pets_allowed,
         "no_commission": f.no_commission,
+        "tolerance_percent": f.tolerance_percent,
     })
 
 

@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import List, Optional
 
 from aiogram import Bot
 from aiogram.types import InputMediaPhoto
 
-from src.bot.formatter import format_listing
+from src.bot.formatter import format_listing, format_listing_approx
 from src.parser.avito import search_listings as avito_search
 from src.parser.cian import search_listings as cian_search
+
 from src.parser.models import Listing, UserFilter
 from src.parser.yandex_realty import search_listings as yandex_search
 from src.storage.database import Database
@@ -43,31 +44,46 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
     """Парсит все площадки, фильтрует и отправляет новые объявления одному пользователю."""
     listings = await _aggregate_listings(user_filter)
     sent_count = 0
+    approx_count = 0
 
     for listing in listings:
         if await db.is_seen(listing.source.value, listing.listing_id, user_filter.user_id):
             continue
 
-        if not user_filter.matches(listing):
+        if user_filter.matches(listing):
+            try:
+                await _send_listing(bot, user_filter.user_id, listing)
+                await db.mark_seen(listing.source.value, listing.listing_id, user_filter.user_id)
+                sent_count += 1
+            except Exception:
+                logger.exception(
+                    "Ошибка при отправке объявления %s:%s пользователю %d",
+                    listing.source.value,
+                    listing.listing_id,
+                    user_filter.user_id,
+                )
             continue
 
-        try:
-            await _send_listing(bot, user_filter.user_id, listing)
-            await db.mark_seen(listing.source.value, listing.listing_id, user_filter.user_id)
-            sent_count += 1
-        except Exception:
-            logger.exception(
-                "Ошибка при отправке объявления %s:%d пользователю %d",
-                listing.source.value,
-                listing.listing_id,
-                user_filter.user_id,
-            )
+        deviations = user_filter.matches_approx(listing)
+        if deviations is not None:
+            try:
+                await _send_listing(bot, user_filter.user_id, listing, deviations=deviations)
+                await db.mark_seen(listing.source.value, listing.listing_id, user_filter.user_id)
+                approx_count += 1
+            except Exception:
+                logger.exception(
+                    "Ошибка при отправке приблизительного объявления %s:%s пользователю %d",
+                    listing.source.value,
+                    listing.listing_id,
+                    user_filter.user_id,
+                )
 
-    if sent_count:
+    if sent_count or approx_count:
         logger.info(
-            "Отправлено %d новых объявлений пользователю %d",
-            sent_count,
+            "Пользователь %d: отправлено %d точных, %d приблизительных",
             user_filter.user_id,
+            sent_count,
+            approx_count,
         )
 
 
@@ -90,9 +106,15 @@ async def _aggregate_listings(user_filter: UserFilter) -> List[Listing]:
     return all_listings
 
 
-async def _send_listing(bot: Bot, user_id: int, listing: Listing) -> None:
+async def _send_listing(
+    bot: Bot,
+    user_id: int,
+    listing: Listing,
+    *,
+    deviations: Optional[List[str]] = None,
+) -> None:
     """Отправляет объявление пользователю: фото + текст."""
-    text = format_listing(listing)
+    text = format_listing_approx(listing, deviations) if deviations else format_listing(listing)
 
     if listing.photos:
         photos = listing.photos[:MAX_PHOTOS_PER_LISTING]

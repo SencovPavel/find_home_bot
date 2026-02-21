@@ -165,6 +165,31 @@ def commission_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+# ── Допуск (tolerance) ─────────────────────────────────────────────
+
+TOLERANCE_OPTIONS = [
+    (0, "Отключить"),
+    (10, "10%"),
+    (15, "15%"),
+    (20, "20%"),
+]
+
+
+def tolerance_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора допуска для «почти подходящих» объявлений."""
+    buttons = [
+        [InlineKeyboardButton(
+            text=label,
+            callback_data=f"tolerance:{value}",
+        )]
+        for value, label in TOLERANCE_OPTIONS
+    ]
+    buttons.append([
+        InlineKeyboardButton(text="Ввести свой %", callback_data="tolerance:custom"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 # ── Подтверждение ──────────────────────────────────────────────────
 
 def confirm_keyboard() -> InlineKeyboardMarkup:

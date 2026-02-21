@@ -205,3 +205,83 @@ git checkout <PREVIOUS_COMMIT_HASH>
 .venv/bin/pip install .
 sudo systemctl restart cian-rental-bot
 ```
+
+## CI/CD (GitHub Actions -> SSH -> systemd)
+
+Автоматический деплой выполняется при `push` в `main`, но только если job с тестами прошел успешно.
+
+### Что происходит в pipeline
+
+1. `test`:
+   - устанавливается Python;
+   - устанавливаются dev-зависимости;
+   - запускается `pytest` (включая порог coverage из `pyproject.toml`).
+2. `deploy` (только после `test`):
+   - подключение к серверу по SSH-ключу;
+   - удаленный запуск `scripts/deploy.sh`;
+   - обновление кода, установка зависимостей, перезапуск и проверка `systemd`-сервиса.
+
+Workflow: `.github/workflows/ci-cd.yml`
+
+### 1) Создайте secrets в GitHub
+
+В репозитории: `Settings -> Secrets and variables -> Actions -> New repository secret`.
+
+- `SSH_HOST` — IP/домен сервера
+- `SSH_PORT` — обычно `22`
+- `SSH_USER` — `botuser`
+- `SSH_PRIVATE_KEY` — приватный ключ для деплоя
+- `APP_DIR` — `/home/botuser/apps/bot`
+- `SYSTEMD_SERVICE` — `cian-rental-bot`
+
+### 2) Подготовьте SSH-ключ для деплоя
+
+Локально (или на безопасной машине администрирования):
+
+```bash
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ./bot_deploy_key
+```
+
+- содержимое `bot_deploy_key` сохраните в `SSH_PRIVATE_KEY`;
+- содержимое `bot_deploy_key.pub` добавьте на сервер:
+
+```bash
+ssh botuser@YOUR_SERVER_IP
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+echo "PASTE_PUBLIC_KEY_HERE" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+### 3) Разрешите restart сервиса без пароля (sudoers)
+
+На сервере:
+
+```bash
+sudo visudo -f /etc/sudoers.d/bot-deploy
+```
+
+Добавьте строку:
+
+```text
+botuser ALL=NOPASSWD: /bin/systemctl restart cian-rental-bot, /bin/systemctl status cian-rental-bot, /bin/systemctl is-active cian-rental-bot
+```
+
+Проверьте:
+
+```bash
+sudo -l -U botuser
+```
+
+### 4) Первичная проверка после включения CI/CD
+
+1. Сделайте небольшой commit в `main`.
+2. Откройте `Actions` и дождитесь завершения `CI/CD`.
+3. На сервере проверьте:
+
+```bash
+sudo systemctl status cian-rental-bot
+sudo journalctl -u cian-rental-bot -n 100 --no-pager
+```
+
+Если `test` падает, деплой не запускается — это ожидаемое поведение.

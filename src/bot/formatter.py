@@ -5,6 +5,8 @@ from __future__ import annotations
 import html
 from urllib.parse import urlsplit
 
+from typing import List
+
 from src.parser.models import Listing, MetroTransport, RenovationType, Source
 
 
@@ -45,6 +47,13 @@ def format_listing(listing: Listing) -> str:
     parts.append(f'<a href="{_safe_url_attr(listing.url)}">Открыть на {source_label}</a>')
 
     return "\n".join(parts)
+
+
+def format_listing_approx(listing: Listing, deviations: List[str]) -> str:
+    """Форматирует «почти подходящее» объявление с указанием отклонений от критериев."""
+    base = format_listing(listing)
+    deviation_lines = "\n".join(f"  • {d}" for d in deviations)
+    return f"⚠️ <b>Почти подходит:</b>\n{deviation_lines}\n\n{base}"
 
 
 def format_listing_short(listing: Listing) -> str:
