@@ -222,17 +222,29 @@ sudo systemctl restart cian-rental-bot
    - обновление кода, установка зависимостей, перезапуск и проверка `systemd`-сервиса.
 
 Workflow: `.github/workflows/ci-cd.yml`
+Это единственный актуальный workflow для тестов и деплоя.
 
 ### 1) Создайте secrets в GitHub
 
 В репозитории: `Settings -> Secrets and variables -> Actions -> New repository secret`.
 
-- `SSH_HOST` — IP/домен сервера
-- `SSH_PORT` — обычно `22`
-- `SSH_USER` — `botuser`
-- `SSH_PRIVATE_KEY` — приватный ключ для деплоя
-- `APP_DIR` — `/home/botuser/apps/bot`
-- `SYSTEMD_SERVICE` — `cian-rental-bot`
+Обязательные secrets для `.github/workflows/ci-cd.yml`:
+
+| Secret | Где используется | Назначение | Пример |
+|---|---|---|---|
+| `SSH_HOST` | шаг `Add server to known_hosts`, шаг `Run deployment script on server` | Адрес сервера для SSH-подключения из GitHub Actions | `203.0.113.10` или `bot.example.com` |
+| `SSH_PORT` | шаг `Add server to known_hosts`, шаг `Run deployment script on server` | Порт SSH на сервере | `22` |
+| `SSH_USER` | шаг `Run deployment script on server` | Пользователь для SSH-доступа и выполнения деплоя | `botuser` |
+| `SSH_PRIVATE_KEY` | шаг `Prepare SSH key` | Приватный ключ, которым GitHub Actions аутентифицируется на сервере | содержимое файла `bot_deploy_key` |
+| `APP_DIR` | шаг `Run deployment script on server` | Абсолютный путь к директории приложения на сервере | `/home/botuser/apps/bot` |
+| `SYSTEMD_SERVICE` | шаг `Run deployment script on server` | Имя systemd-сервиса, который нужно перезапустить после обновления | `cian-rental-bot` |
+
+Важно:
+- все значения добавляются как `Repository secrets` (не `Variables`);
+- `SSH_PRIVATE_KEY` добавляйте целиком, включая строки `BEGIN/END`;
+- в `authorized_keys` на сервере должен быть добавлен соответствующий публичный ключ.
+
+Не используйте устаревшие имена секретов из старого workflow (`DEPLOY_KEY`, `HOST`, `USER`, `KNOWN_HOSTS`) — в текущем `ci-cd.yml` они не читаются.
 
 ### 2) Подготовьте SSH-ключ для деплоя
 
