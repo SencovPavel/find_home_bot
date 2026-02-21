@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from src.bot.keyboards import (
     area_keyboard,
-    city_keyboard,
+    city_search_results_keyboard,
     commission_keyboard,
     confirm_keyboard,
     kitchen_keyboard,
@@ -14,15 +14,34 @@ from src.bot.keyboards import (
     rooms_keyboard,
     tolerance_keyboard,
 )
+from src.data.cities import City
 
 
-def test_city_keyboard_has_two_cities() -> None:
-    """Клавиатура городов содержит Москву и СПб."""
-    kb = city_keyboard()
+def test_city_search_results_keyboard_shows_found_cities() -> None:
+    """Клавиатура результатов поиска отображает переданные города."""
+    cities = [
+        City(1, "Москва", 1, "moskva"),
+        City(2, "Санкт-Петербург", 2, "sankt-peterburg"),
+    ]
+    kb = city_search_results_keyboard(cities)
     texts = [btn.text for row in kb.inline_keyboard for btn in row]
 
-    assert "Москва" in texts
-    assert "Санкт-Петербург" in texts
+    assert texts == ["Москва", "Санкт-Петербург"]
+
+
+def test_city_search_results_keyboard_callback_data() -> None:
+    """Callback data содержит ID города."""
+    cities = [City(42, "Тестград", 100, "testgrad")]
+    kb = city_search_results_keyboard(cities)
+    data = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+
+    assert data == ["city:42"]
+
+
+def test_city_search_results_keyboard_empty_list() -> None:
+    """Пустой список городов — пустая клавиатура."""
+    kb = city_search_results_keyboard([])
+    assert kb.inline_keyboard == []
 
 
 def test_rooms_keyboard_marks_selected() -> None:

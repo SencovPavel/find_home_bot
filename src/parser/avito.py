@@ -11,15 +11,11 @@ from urllib.parse import urlencode
 import aiohttp
 from bs4 import BeautifulSoup
 
+from src.data.cities import get_city_by_id
 from src.parser.base import fetch_page, parse_float
 from src.parser.models import Listing, MetroTransport, Source, UserFilter
 
 logger = logging.getLogger(__name__)
-
-CITY_SLUG_MAP: Dict[int, str] = {
-    1: "moskva",
-    2: "sankt-peterburg",
-}
 
 _RENOVATION_MAP: Dict[str, str] = {
     "косметический": "cosmetic",
@@ -32,7 +28,8 @@ _RENOVATION_MAP: Dict[str, str] = {
 
 def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
     """Формирует URL поиска Авито для длительной аренды квартир."""
-    city_slug = CITY_SLUG_MAP.get(user_filter.city, "moskva")
+    city = get_city_by_id(user_filter.city)
+    city_slug = city.slug if city else "moskva"
     base = f"https://www.avito.ru/{city_slug}/kvartiry/sdam/na_dlitelnyy_srok"
 
     params: Dict[str, object] = {}

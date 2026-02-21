@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
+from typing import List
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from src.data.cities import City
 
 # ── Города ─────────────────────────────────────────────────────────
 
-CITIES = {
-    1: "Москва",
-    2: "Санкт-Петербург",
-}
 
-
-def city_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура выбора города."""
+def city_search_results_keyboard(cities: List[City]) -> InlineKeyboardMarkup:
+    """Динамическая клавиатура из результатов поиска городов."""
     buttons = [
-        [InlineKeyboardButton(text=name, callback_data=f"city:{cid}")]
-        for cid, name in CITIES.items()
+        [InlineKeyboardButton(text=c.name, callback_data=f"city:{c.id}")]
+        for c in cities
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

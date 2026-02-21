@@ -13,10 +13,9 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from src.bot.keyboards import (
-    CITIES,
     RENOVATION_OPTIONS,
     area_keyboard,
-    city_keyboard,
+    city_search_results_keyboard,
     commission_keyboard,
     confirm_keyboard,
     kitchen_keyboard,
@@ -26,6 +25,7 @@ from src.bot.keyboards import (
     rooms_keyboard,
     tolerance_keyboard,
 )
+from src.data.cities import get_city_by_id, get_city_name, search_cities
 from src.parser.models import RenovationType, UserFilter
 
 if TYPE_CHECKING:
@@ -97,14 +97,37 @@ async def cmd_search(
         renovation_types=[],
     )
     await message.answer(
-        f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Выберите город",
-        reply_markup=city_keyboard(),
+        f"🏙 <b>Шаг 1/{TOTAL_STEPS}:</b> Введите название города",
         parse_mode="HTML",
     )
     await state.set_state(SearchWizard.city)
 
 
 # ── Город ──────────────────────────────────────────────────────────
+
+@router.message(SearchWizard.city)
+async def on_city_text(message: Message, state: FSMContext) -> None:
+    """Текстовый поиск города по введённому названию."""
+    if await _is_rate_limited_message(message):
+        return
+    query = (message.text or "").strip()
+    if not query:
+        await message.answer("Пожалуйста, введите название города.")
+        return
+
+    found = search_cities(query)
+    if not found:
+        await message.answer(
+            "Город не найден. Попробуйте ввести название ещё раз.",
+        )
+        return
+
+    await message.answer(
+        f"🏙 Найдено городов: <b>{len(found)}</b>. Выберите из списка:",
+        reply_markup=city_search_results_keyboard(found),
+        parse_mode="HTML",
+    )
+
 
 @router.callback_query(SearchWizard.city, F.data.startswith("city:"))
 async def on_city(callback: CallbackQuery, state: FSMContext) -> None:
@@ -114,15 +137,18 @@ async def on_city(callback: CallbackQuery, state: FSMContext) -> None:
     if parts is None:
         await _reject_bad_callback(callback)
         return
-    city_id = _parse_int_in_range(parts[1], minimum=1, maximum=max(CITIES))
+    city_id = _parse_int_in_range(parts[1], minimum=1, maximum=10_000)
     if city_id is None:
         await _reject_bad_callback(callback)
         return
+    city = get_city_by_id(city_id)
+    if city is None:
+        await _reject_bad_callback(callback, text="Город не найден.")
+        return
     await state.update_data(city=city_id)
 
-    city_name = CITIES.get(city_id, str(city_id))
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"🏙 Город: <b>{city_name}</b>\n\n"
+        f"🏙 Город: <b>{city.name}</b>\n\n"
         f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
         reply_markup=rooms_keyboard(),
         parse_mode="HTML",
@@ -615,8 +641,7 @@ def _build_summary(data: dict) -> str:
     """Строит текстовое описание фильтров из FSM-данных."""
     lines: list[str] = []
 
-    city_name = CITIES.get(data.get("city", 1), "—")
-    lines.append(f"🏙 Город: {city_name}")
+    lines.append(f"🏙 Город: {get_city_name(data.get('city', 1))}")
 
     rooms = data.get("rooms", [])
     if rooms:

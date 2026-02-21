@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 import aiohttp
 from bs4 import BeautifulSoup
 
+from src.data.cities import get_city_by_id
 from src.parser.base import fetch_page, parse_float
 from src.parser.models import Listing, MetroTransport, Source, UserFilter
 
@@ -25,19 +26,16 @@ _RENOVATION_MAP: Dict[str, str] = {
     "без ремонта": "no_renovation",
 }
 
-CITY_REGION_MAP: Dict[int, int] = {
-    1: 1,
-    2: 2,
-}
-
 
 def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
     """Формирует URL поиска ЦИАН из пользовательских фильтров."""
+    city = get_city_by_id(user_filter.city)
+    cian_region = city.cian_region if city else user_filter.city
     params: dict[str, object] = {
         "deal_type": "rent",
         "offer_type": "flat",
         "type": 4,
-        "region": CITY_REGION_MAP.get(user_filter.city, user_filter.city),
+        "region": cian_region,
         "p": page,
         "sort": "creation_date_desc",
     }
