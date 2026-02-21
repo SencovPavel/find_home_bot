@@ -54,7 +54,7 @@ def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
         params["areaMin"] = int(user_filter.area_min)
     if user_filter.kitchen_area_min:
         params["kitchenSpaceMin"] = int(user_filter.kitchen_area_min)
-    if user_filter.no_commission:
+    if user_filter.commission_max_percent == 0:
         params["hasAgentFee"] = "NO"
 
     if user_filter.rooms:

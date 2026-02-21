@@ -270,8 +270,8 @@ def test_build_search_url_spb() -> None:
 
 
 def test_build_search_url_no_commission() -> None:
-    """При no_commission=True добавляется hasAgentFee=NO."""
-    user_filter = UserFilter(user_id=1, city=1, no_commission=True)
+    """При commission_max_percent=0 добавляется hasAgentFee=NO."""
+    user_filter = UserFilter(user_id=1, city=1, commission_max_percent=0)
 
     url = build_search_url(user_filter, page=1)
 
@@ -288,7 +288,7 @@ def test_build_search_url_all_filters() -> None:
         price_max=120_000,
         area_min=35.0,
         kitchen_area_min=7.0,
-        no_commission=True,
+        commission_max_percent=0,
     )
 
     url = build_search_url(user_filter, page=3)

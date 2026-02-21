@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional
@@ -99,7 +100,7 @@ class UserFilter:
     renovation_types: List[str] = field(default_factory=list)
     rooms: List[int] = field(default_factory=list)
     pets_allowed: bool = True
-    no_commission: bool = False
+    commission_max_percent: int = 100  # 0 = только без комиссии, 100 = не важно
     tolerance_percent: int = 0
     initial_listings_count: int = 0  # 0 = отключено, 1-30 = сколько показать сразу при старте
     is_active: bool = False
@@ -120,8 +121,12 @@ class UserFilter:
             return False
         if self.pets_allowed and _has_pet_ban(listing.description):
             return False
-        if self.no_commission and _has_commission(listing.commission):
-            return False
+        if self.commission_max_percent < 100:
+            parsed = _parse_commission_percent(listing.commission)
+            if parsed is None:
+                return False
+            if parsed > self.commission_max_percent:
+                return False
         return True
 
     def matches_approx(self, listing: Listing) -> Optional[List[str]]:
@@ -140,8 +145,10 @@ class UserFilter:
             return None
         if self.pets_allowed and _has_pet_ban(listing.description):
             return None
-        if self.no_commission and _has_commission(listing.commission):
-            return None
+        if self.commission_max_percent < 100:
+            parsed = _parse_commission_percent(listing.commission)
+            if parsed is None or parsed > self.commission_max_percent:
+                return None
 
         factor = self.tolerance_percent / 100
         deviations: List[str] = []
@@ -193,6 +200,25 @@ _NO_COMMISSION_MARKERS = (
     "без комиссии",
     "комиссия 0",
 )
+
+
+def _parse_commission_percent(commission: str) -> int | None:
+    """Извлекает процент комиссии из строки. 0 = без комиссии, None = нераспознанный формат."""
+    if not commission:
+        return 0
+    lower = commission.lower().strip()
+    if lower in ("0", "0%"):
+        return 0
+    if any(marker in lower for marker in _NO_COMMISSION_MARKERS):
+        return 0
+    match = re.search(r"(\d+(?:[.,]\d+)?)\s*%?", lower)
+    if match:
+        try:
+            val = float(match.group(1).replace(",", "."))
+            return min(100, max(0, int(round(val))))
+        except ValueError:
+            pass
+    return None
 
 
 def _has_pet_ban(description: str) -> bool:

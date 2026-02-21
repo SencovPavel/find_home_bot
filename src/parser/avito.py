@@ -42,7 +42,7 @@ def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
     if page > 1:
         params["p"] = page
 
-    if user_filter.no_commission:
+    if user_filter.commission_max_percent == 0:
         params["f"] = "ASgBAgICAkSSA8gQ8AeQUg"
 
     return f"{base}?{urlencode(params)}" if params else base

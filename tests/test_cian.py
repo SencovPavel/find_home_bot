@@ -178,7 +178,7 @@ def test_build_search_url_with_all_filters() -> None:
         price_max=150_000,
         area_min=40.0,
         kitchen_area_min=8.0,
-        no_commission=True,
+        commission_max_percent=0,
     )
 
     url = build_search_url(user_filter, page=2)

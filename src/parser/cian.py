@@ -48,7 +48,7 @@ def build_search_url(user_filter: UserFilter, page: int = 1) -> str:
         params["mintarea"] = int(user_filter.area_min)
     if user_filter.kitchen_area_min:
         params["minkarea"] = int(user_filter.kitchen_area_min)
-    if user_filter.no_commission:
+    if user_filter.commission_max_percent == 0:
         params["is_by_homeowner"] = 1
 
     if user_filter.rooms:

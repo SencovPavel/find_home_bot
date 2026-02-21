@@ -61,6 +61,7 @@ class SearchWizard(StatesGroup):
     renovation = State()
     pets = State()
     commission = State()
+    commission_text = State()
     tolerance = State()
     tolerance_text = State()
     initial_listings = State()
@@ -495,11 +496,22 @@ async def on_commission(callback: CallbackQuery, state: FSMContext, db: Database
     if parts is None:
         await _reject_bad_callback(callback)
         return
-    if parts[1] not in {"0", "1"}:
+
+    if parts[1] == "custom":
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            "💼 Введите допустимый максимум комиссии в процентах (от 0 до 99).\n"
+            "0 — только без комиссии.",
+            parse_mode="HTML",
+        )
+        await state.set_state(SearchWizard.commission_text)
+        await callback.answer()
+        return
+
+    value = _parse_int_in_range(parts[1], minimum=0, maximum=100)
+    if value is None:
         await _reject_bad_callback(callback)
         return
-    no_commission = parts[1] == "1"
-    await state.update_data(no_commission=no_commission)
+    await state.update_data(commission_max_percent=value)
 
     data = await state.get_data()
     if edit_field := data.get("edit_filter"):
@@ -507,9 +519,9 @@ async def on_commission(callback: CallbackQuery, state: FSMContext, db: Database
         await callback.answer()
         return
 
-    commission_text = "Только без комиссии" if no_commission else "Не важно"
+    comm_label = _commission_label(value)
     await callback.message.edit_text(  # type: ignore[union-attr]
-        f"💼 Комиссия: <b>{commission_text}</b>\n\n"
+        f"💼 Комиссия: <b>{comm_label}</b>\n\n"
         f"📊 <b>Шаг 9/{TOTAL_STEPS}:</b> Допуск для «почти подходящих» объявлений\n"
         "Если объявление чуть-чуть не попадает в критерии (цена, площадь), "
         "оно придёт с пометкой.",
@@ -518,6 +530,34 @@ async def on_commission(callback: CallbackQuery, state: FSMContext, db: Database
     )
     await state.set_state(SearchWizard.tolerance)
     await callback.answer()
+
+
+@router.message(SearchWizard.commission_text)
+async def on_commission_text(message: Message, state: FSMContext, db: Database) -> None:
+    if await _is_rate_limited_message(message):
+        return
+    raw = (message.text or "").strip().replace("%", "")
+    value = _parse_int_in_range(raw, minimum=0, maximum=99)
+    if value is None:
+        await message.answer("Введите число от 0 до 99.")
+        return
+
+    await state.update_data(commission_max_percent=value)
+    data = await state.get_data()
+    if edit_field := data.get("edit_filter"):
+        await _save_edit_filter_and_show(message, state, db, message.from_user.id, edit_field)  # type: ignore[union-attr]
+        return
+
+    comm_label = _commission_label(value)
+    await message.answer(
+        f"💼 Комиссия: <b>{comm_label}</b>\n\n"
+        f"📊 <b>Шаг 9/{TOTAL_STEPS}:</b> Допуск для «почти подходящих» объявлений\n"
+        "Если объявление чуть-чуть не попадает в критерии (цена, площадь), "
+        "оно придёт с пометкой.",
+        reply_markup=tolerance_keyboard(),
+        parse_mode="HTML",
+    )
+    await state.set_state(SearchWizard.tolerance)
 
 
 # ── Допуск (tolerance) ─────────────────────────────────────────────
@@ -775,7 +815,7 @@ async def on_back(callback: CallbackQuery, state: FSMContext, db: Database) -> N
     elif current == SearchWizard.initial_listings.state:
         await state.set_state(SearchWizard.tolerance)
         await msg.edit_text(
-            f"💼 Комиссия: <b>{'Только без комиссии' if data.get('no_commission') else 'Не важно'}</b>\n\n"
+            f"💼 Комиссия: <b>{_commission_label(data.get('commission_max_percent', 100))}</b>\n\n"
             f"📊 <b>Шаг 9/{TOTAL_STEPS}:</b> Допуск для «почти подходящих» объявлений\n"
             "Если объявление чуть-чуть не попадает в критерии (цена, площадь), "
             "оно придёт с пометкой.",
@@ -827,7 +867,7 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
         kitchen_area_min=data.get("kitchen_area_min", 0),
         renovation_types=data.get("renovation_types", []),
         pets_allowed=data.get("pets_allowed", True),
-        no_commission=data.get("no_commission", False),
+        commission_max_percent=data.get("commission_max_percent", 100),
         tolerance_percent=data.get("tolerance_percent", 0),
         initial_listings_count=data.get("initial_listings_count", 0),
         is_active=True,
@@ -1032,9 +1072,9 @@ async def on_edit_filter_select(callback: CallbackQuery, state: FSMContext, db: 
         )
     elif edit_field == "commission":
         await state.set_state(SearchWizard.commission)
-        commission_text = "Только без комиссии" if user_filter.no_commission else "Не важно"
+        comm_label = _commission_label(user_filter.commission_max_percent)
         await msg.edit_text(
-            f"✏️ <b>Изменить фильтр по комиссии</b>\n\nТекущий: {commission_text}\n\nВыберите:",
+            f"✏️ <b>Изменить фильтр по комиссии</b>\n\nТекущий: {comm_label}\n\nВыберите:",
             reply_markup=commission_keyboard(),
             parse_mode="HTML",
         )
@@ -1113,6 +1153,15 @@ async def cmd_resume(message: Message, db: Database) -> None:
 
 # ── Утилиты ────────────────────────────────────────────────────────
 
+def _commission_label(commission_max_percent: int) -> str:
+    """Человекочитаемое название допустимой комиссии."""
+    if commission_max_percent == 0:
+        return "Только без комиссии"
+    if commission_max_percent >= 100:
+        return "Не важно"
+    return f"До {commission_max_percent}%"
+
+
 def _price_range_text(price_min: int, price_max: int) -> str:
     if price_min and price_max:
         return f"{price_min:,} – {price_max:,} ₽".replace(",", " ")
@@ -1153,8 +1202,8 @@ def _build_summary(data: dict) -> str:
     pets = data.get("pets_allowed", True)
     lines.append(f"🐾 Животные: {'Скрывать с запретом' if pets else 'Показывать все'}")
 
-    no_commission = data.get("no_commission", False)
-    lines.append(f"💼 Комиссия: {'Только без комиссии' if no_commission else 'Не важно'}")
+    comm = data.get("commission_max_percent", 100)
+    lines.append(f"💼 Комиссия: {_commission_label(comm)}")
 
     tolerance = data.get("tolerance_percent", 0)
     if tolerance:
@@ -1182,7 +1231,7 @@ def _build_summary_from_filter(f: UserFilter) -> str:
         "kitchen_area_min": f.kitchen_area_min,
         "renovation_types": f.renovation_types,
         "pets_allowed": f.pets_allowed,
-        "no_commission": f.no_commission,
+        "commission_max_percent": f.commission_max_percent,
         "tolerance_percent": f.tolerance_percent,
         "initial_listings_count": f.initial_listings_count,
     })
@@ -1199,7 +1248,7 @@ def _user_filter_to_fsm_data(f: UserFilter) -> dict:
         "kitchen_area_min": f.kitchen_area_min,
         "renovation_types": f.renovation_types,
         "pets_allowed": f.pets_allowed,
-        "no_commission": f.no_commission,
+        "commission_max_percent": f.commission_max_percent,
         "tolerance_percent": f.tolerance_percent,
         "initial_listings_count": f.initial_listings_count,
     }
@@ -1222,7 +1271,7 @@ def _fsm_data_to_user_filter(
         kitchen_area_min=g("kitchen_area_min", 0) if edit_field == "kitchen" else base.kitchen_area_min,
         renovation_types=g("renovation_types", []) if edit_field == "renovation" else base.renovation_types,
         pets_allowed=g("pets_allowed", True) if edit_field == "pets" else base.pets_allowed,
-        no_commission=g("no_commission", False) if edit_field == "commission" else base.no_commission,
+        commission_max_percent=g("commission_max_percent", 100) if edit_field == "commission" else base.commission_max_percent,
         tolerance_percent=g("tolerance_percent", 0) if edit_field == "tolerance" else base.tolerance_percent,
         initial_listings_count=g("initial_listings_count", 0) if edit_field == "initial_listings" else base.initial_listings_count,
         is_active=base.is_active,

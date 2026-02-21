@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from src.parser.models import Listing, MetroTransport, Source, UserFilter
+from src.parser.models import (
+    Listing,
+    MetroTransport,
+    Source,
+    UserFilter,
+    _parse_commission_percent,
+)
 
 
 def _listing_with_description(description: str) -> Listing:
@@ -115,28 +121,46 @@ def test_user_filter_rejects_by_renovation() -> None:
 
 
 def test_user_filter_rejects_by_commission() -> None:
-    """Объявление с комиссией отклоняется при no_commission=True."""
+    """Объявление с комиссией 50% отклоняется при commission_max_percent=0."""
     listing = _listing_with_description("Квартира")
     listing.commission = "50%"
-    user_filter = UserFilter(user_id=1, no_commission=True, pets_allowed=False)
+    user_filter = UserFilter(user_id=1, commission_max_percent=0, pets_allowed=False)
 
     assert user_filter.matches(listing) is False
 
 
 def test_user_filter_allows_no_commission_listing() -> None:
-    """Объявление без комиссии проходит при no_commission=True."""
+    """Объявление без комиссии проходит при commission_max_percent=0."""
     listing = _listing_with_description("Квартира")
     listing.commission = "без комиссии"
-    user_filter = UserFilter(user_id=1, no_commission=True, pets_allowed=False)
+    user_filter = UserFilter(user_id=1, commission_max_percent=0, pets_allowed=False)
 
     assert user_filter.matches(listing) is True
 
 
+def test_user_filter_allows_up_to_max_commission() -> None:
+    """Объявление с комиссией 30% проходит при commission_max_percent=50."""
+    listing = _listing_with_description("Квартира")
+    listing.commission = "30%"
+    user_filter = UserFilter(user_id=1, commission_max_percent=50, pets_allowed=False)
+
+    assert user_filter.matches(listing) is True
+
+
+def test_user_filter_rejects_over_max_commission() -> None:
+    """Объявление с комиссией 50% отклоняется при commission_max_percent=30."""
+    listing = _listing_with_description("Квартира")
+    listing.commission = "50%"
+    user_filter = UserFilter(user_id=1, commission_max_percent=30, pets_allowed=False)
+
+    assert user_filter.matches(listing) is False
+
+
 def test_user_filter_allows_zero_percent_commission() -> None:
-    """Объявление с комиссией 0% проходит при no_commission=True."""
+    """Объявление с комиссией 0% проходит при commission_max_percent=0."""
     listing = _listing_with_description("Квартира")
     listing.commission = "0%"
-    user_filter = UserFilter(user_id=1, no_commission=True, pets_allowed=False)
+    user_filter = UserFilter(user_id=1, commission_max_percent=0, pets_allowed=False)
 
     assert user_filter.matches(listing) is True
 
@@ -178,11 +202,11 @@ def test_matches_approx_returns_none_when_pet_ban_strict() -> None:
 
 
 def test_matches_approx_returns_none_when_commission_strict() -> None:
-    """Строгий критерий: комиссия — None даже при допуске."""
+    """Строгий критерий: комиссия превышает лимит — None даже при допуске."""
     listing = _listing_with_description("Квартира")
     listing.commission = "50%"
     user_filter = UserFilter(
-        user_id=1, no_commission=True, tolerance_percent=20, pets_allowed=False,
+        user_id=1, commission_max_percent=0, tolerance_percent=20, pets_allowed=False,
     )
 
     assert user_filter.matches_approx(listing) is None
@@ -292,10 +316,40 @@ def test_matches_approx_price_under_exceeds_tolerance() -> None:
     assert user_filter.matches_approx(listing) is None
 
 
-def test_user_filter_passes_empty_commission_with_no_commission_filter() -> None:
-    """Пустая комиссия проходит фильтр no_commission=True."""
+def test_user_filter_passes_empty_commission_with_max_zero() -> None:
+    """Пустая комиссия проходит при commission_max_percent=0 (трактуется как 0%)."""
     listing = _listing_with_description("Квартира")
     listing.commission = ""
-    user_filter = UserFilter(user_id=1, no_commission=True, pets_allowed=False)
+    user_filter = UserFilter(user_id=1, commission_max_percent=0, pets_allowed=False)
 
     assert user_filter.matches(listing) is True
+
+
+def test_parse_commission_percent_empty_returns_zero() -> None:
+    """Пустая строка комиссии трактуется как 0%."""
+    assert _parse_commission_percent("") == 0
+
+
+def test_parse_commission_percent_zero_and_percent() -> None:
+    """'0', '0%' → 0."""
+    assert _parse_commission_percent("0") == 0
+    assert _parse_commission_percent("0%") == 0
+
+
+def test_parse_commission_percent_no_commission_markers() -> None:
+    """'без комиссии', 'комиссия 0' → 0."""
+    assert _parse_commission_percent("без комиссии") == 0
+    assert _parse_commission_percent("комиссия 0") == 0
+
+
+def test_parse_commission_percent_numeric() -> None:
+    """Числовые значения парсятся корректно."""
+    assert _parse_commission_percent("30%") == 30
+    assert _parse_commission_percent("50%") == 50
+    assert _parse_commission_percent("50") == 50
+    assert _parse_commission_percent("100") == 100
+
+
+def test_parse_commission_percent_invalid_returns_none() -> None:
+    """Нераспознаваемый формат → None."""
+    assert _parse_commission_percent("комиссия агента") is None

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS user_filters (
     rooms            TEXT    NOT NULL DEFAULT '[]',
     pets_allowed     INTEGER NOT NULL DEFAULT 1,
     no_commission    INTEGER NOT NULL DEFAULT 0,
+    commission_max_percent INTEGER NOT NULL DEFAULT 100,
     tolerance_percent INTEGER NOT NULL DEFAULT 0,
     initial_listings_count INTEGER NOT NULL DEFAULT 0,
     is_active        INTEGER NOT NULL DEFAULT 0
@@ -46,6 +47,8 @@ _MIGRATIONS = [
     "ALTER TABLE seen_listings RENAME COLUMN cian_id TO listing_id",
     "ALTER TABLE user_filters ADD COLUMN tolerance_percent INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE user_filters ADD COLUMN initial_listings_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE user_filters ADD COLUMN commission_max_percent INTEGER NOT NULL DEFAULT 100",
+    "UPDATE user_filters SET commission_max_percent = 0 WHERE no_commission = 1",
 ]
 
 
@@ -104,9 +107,9 @@ class Database:
             INSERT INTO user_filters
                 (user_id, city, district, metro, price_min, price_max,
                  area_min, kitchen_area_min, renovation_types, rooms,
-                 pets_allowed, no_commission, tolerance_percent,
+                 pets_allowed, no_commission, commission_max_percent, tolerance_percent,
                  initial_listings_count, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 city = excluded.city,
                 district = excluded.district,
@@ -119,6 +122,7 @@ class Database:
                 rooms = excluded.rooms,
                 pets_allowed = excluded.pets_allowed,
                 no_commission = excluded.no_commission,
+                commission_max_percent = excluded.commission_max_percent,
                 tolerance_percent = excluded.tolerance_percent,
                 initial_listings_count = excluded.initial_listings_count,
                 is_active = excluded.is_active
@@ -135,7 +139,8 @@ class Database:
                 json.dumps(f.renovation_types),
                 json.dumps(f.rooms),
                 int(f.pets_allowed),
-                int(f.no_commission),
+                0 if f.commission_max_percent < 100 else 1,  # no_commission for backward compat
+                f.commission_max_percent,
                 f.tolerance_percent,
                 f.initial_listings_count,
                 int(f.is_active),
@@ -199,7 +204,7 @@ def _row_to_filter(row: aiosqlite.Row) -> UserFilter:
         renovation_types=json.loads(row["renovation_types"]),
         rooms=json.loads(row["rooms"]),
         pets_allowed=bool(row["pets_allowed"]),
-        no_commission=bool(row["no_commission"]),
+        commission_max_percent=int(row["commission_max_percent"]) if "commission_max_percent" in row.keys() else (0 if row["no_commission"] else 100),
         tolerance_percent=int(row["tolerance_percent"]),
         initial_listings_count=int(row["initial_listings_count"]),
         is_active=bool(row["is_active"]),

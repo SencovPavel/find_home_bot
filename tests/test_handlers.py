@@ -127,7 +127,7 @@ def test_user_filter_to_fsm_data_roundtrip() -> None:
         kitchen_area_min=8.0,
         renovation_types=["euro"],
         pets_allowed=True,
-        no_commission=True,
+        commission_max_percent=30,
         tolerance_percent=10,
         initial_listings_count=5,
     )
@@ -135,7 +135,7 @@ def test_user_filter_to_fsm_data_roundtrip() -> None:
     assert data["city"] == 2
     assert data["rooms"] == [2, 3]
     assert data["price_min"] == 50_000
-    assert data["no_commission"] is True
+    assert data["commission_max_percent"] == 30
 
     updated = handlers._fsm_data_to_user_filter(
         {**data, "rooms": [1, 2]}, f, user_id=1, edit_field="rooms"
@@ -143,6 +143,7 @@ def test_user_filter_to_fsm_data_roundtrip() -> None:
     assert updated.rooms == [1, 2]
     assert updated.city == 2
     assert updated.price_min == 50_000
+    assert updated.commission_max_percent == 30
 
 
 @pytest.mark.asyncio

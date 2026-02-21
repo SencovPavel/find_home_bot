@@ -137,13 +137,16 @@ def test_pets_keyboard_has_two_options_and_back() -> None:
     assert "← Назад" in texts
 
 
-def test_commission_keyboard_has_two_options() -> None:
-    """Клавиатура комиссии содержит две опции."""
+def test_commission_keyboard_has_options() -> None:
+    """Клавиатура комиссии содержит опции: 0, 30%, 50%, 100%, custom."""
     kb = commission_keyboard()
     texts = [btn.text for row in kb.inline_keyboard for btn in row]
 
     assert "Только без комиссии" in texts
+    assert "До 30%" in texts
+    assert "До 50%" in texts
     assert "Не важно" in texts
+    assert "Ввести свой %" in texts
 
 
 def test_tolerance_keyboard_has_custom_option() -> None:

@@ -86,7 +86,7 @@ async def test_database_initial_listings_count_round_trip(temp_db_path: str) -> 
 
 @pytest.mark.asyncio
 async def test_database_tolerance_and_commission_round_trip(temp_db_path: str) -> None:
-    """Поля tolerance_percent и no_commission корректно сохраняются и читаются."""
+    """Поля tolerance_percent и commission_max_percent корректно сохраняются и читаются."""
     db = Database(temp_db_path)
     await db.connect()
     try:
@@ -94,7 +94,7 @@ async def test_database_tolerance_and_commission_round_trip(temp_db_path: str) -
             user_id=13,
             city=1,
             price_max=120_000,
-            no_commission=True,
+            commission_max_percent=0,
             tolerance_percent=15,
             is_active=True,
         )
@@ -102,18 +102,18 @@ async def test_database_tolerance_and_commission_round_trip(temp_db_path: str) -
 
         loaded = await db.get_filter(13)
         assert loaded is not None
-        assert loaded.no_commission is True
+        assert loaded.commission_max_percent == 0
         assert loaded.tolerance_percent == 15
         assert loaded.is_active is True
 
         user_filter.tolerance_percent = 0
-        user_filter.no_commission = False
+        user_filter.commission_max_percent = 50
         await db.upsert_filter(user_filter)
 
         reloaded = await db.get_filter(13)
         assert reloaded is not None
         assert reloaded.tolerance_percent == 0
-        assert reloaded.no_commission is False
+        assert reloaded.commission_max_percent == 50
     finally:
         await db.close()
 
