@@ -33,6 +33,7 @@ from src.bot.keyboards import (
     rooms_keyboard,
     tolerance_keyboard,
 )
+from src.config import config
 from src.data.cities import get_city_by_id, get_cities_display, get_city_name, search_cities
 from src.parser.models import RenovationType, UserFilter
 from src.scheduler.monitor import send_initial_listings
@@ -90,7 +91,15 @@ async def cmd_start(message: Message) -> None:
         reply_markup=commands_reply_keyboard(),
         parse_mode="HTML",
     )
-    await message.answer("Быстрые действия:", reply_markup=commands_inline_keyboard())
+    user_id = message.from_user.id if message.from_user else 0  # type: ignore[union-attr]
+    await message.answer(
+        "Быстрые действия:",
+        reply_markup=commands_inline_keyboard(
+            webapp_url=config.webapp_url,
+            user_id=user_id,
+            admin_user_id=config.admin_user_id,
+        ),
+    )
 
 
 # ── /search — запуск wizard ────────────────────────────────────────

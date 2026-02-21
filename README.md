@@ -47,6 +47,17 @@ cp .env.example .env
 | `BOT_TOKEN` | Токен бота от @BotFather |
 | `ADMIN_USER_ID` | Ваш Telegram user ID (узнать: [@userinfobot](https://t.me/userinfobot)) |
 | `CHECK_INTERVAL_MINUTES` | Интервал проверки в минутах (по умолчанию 5) |
+| `WEBAPP_URL` | HTTPS-URL Mini App (опционально, для дашборда) |
+| `WEBAPP_HOST` | Хост для web-сервера (по умолчанию 0.0.0.0) |
+| `WEBAPP_PORT` | Порт для web-сервера (по умолчанию 8080) |
+
+## Telegram Mini App (дашборд)
+
+Дашборд со статусом мониторинга и сводкой фильтров — доступен **только администратору** (ADMIN_USER_ID).
+
+Если задан `WEBAPP_URL`, при запуске поднимается web-сервер; в `/start` у администратора появляется кнопка «Открыть дашборд». Mini App требует HTTPS.
+
+**Локальная разработка:** используйте ngrok: `ngrok http 8080` → скопируйте HTTPS-URL в `WEBAPP_URL`.
 
 ## Запуск
 
@@ -89,6 +100,11 @@ src/
     handlers.py        — обработчики команд
     keyboards.py       — inline-клавиатуры
     formatter.py       — форматирование сообщений
+  webapp/
+    routes.py          — API дашборда
+    validation.py      — валидация initData
+    static/
+      index.html       — страница дашборда
   parser/
     base.py            — общий интерфейс и утилиты парсеров
     cian.py            — парсер ЦИАН

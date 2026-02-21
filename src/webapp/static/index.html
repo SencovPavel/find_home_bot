@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Дашборд — Rental Bot</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: var(--tg-theme-bg-color, #fff);
+      color: var(--tg-theme-text-color, #000);
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 16px; }
+    .status {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-weight: 500;
+    }
+    .status.active { background: #e8f5e9; color: #2e7d32; }
+    .status.paused { background: #fff3e0; color: #e65100; }
+    .status.empty { background: #f5f5f5; color: #616161; }
+    .filters {
+      white-space: pre-wrap;
+      font-size: 0.9rem;
+      padding: 12px;
+      background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+      border-radius: 8px;
+    }
+    .error { color: #c62828; }
+  </style>
+</head>
+<body>
+  <h1>Дашборд мониторинга</h1>
+  <div id="content">
+    <p>Загрузка…</p>
+  </div>
+
+  <script>
+    (function() {
+      const tg = window.Telegram && window.Telegram.WebApp;
+      if (tg) {
+        tg.ready();
+        tg.expand();
+      }
+
+      const initData = tg ? tg.initData : '';
+      const content = document.getElementById('content');
+
+      if (!initData) {
+        content.innerHTML = '<p class="error">Откройте приложение через бота в Telegram.</p>';
+        return;
+      }
+
+      const url = '/api/dashboard?init_data=' + encodeURIComponent(initData);
+      fetch(url)
+        .then(function(res) {
+          if (res.status === 403) {
+            throw new Error('Доступ запрещён');
+          }
+          if (!res.ok) throw new Error('Ошибка загрузки');
+          return res.json();
+        })
+        .then(function(data) {
+          let html = '';
+          if (data.has_filter) {
+            html += '<div class="status ' + (data.is_active ? 'active' : 'paused') + '">';
+            html += data.is_active ? '🟢 Мониторинг активен' : '🔴 Мониторинг приостановлен';
+            html += '</div>';
+            html += '<div class="filters">' + (data.filter_summary || '').replace(/\n/g, '<br>') + '</div>';
+          } else {
+            html += '<div class="status empty">Фильтры не настроены</div>';
+            html += '<p>Используйте /search в боте для настройки.</p>';
+          }
+          content.innerHTML = html;
+        })
+        .catch(function(err) {
+          content.innerHTML = '<p class="error">' + (err.message || 'Ошибка загрузки данных') + '</p>';
+        });
+    })();
+  </script>
+</body>
+</html>

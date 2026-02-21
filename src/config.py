@@ -28,6 +28,9 @@ class Config:
     admin_user_id: int
     check_interval_minutes: int
     db_path: str
+    webapp_url: str | None
+    webapp_host: str
+    webapp_port: int
 
     @classmethod
     def from_env(cls) -> Config:
@@ -37,6 +40,9 @@ class Config:
             admin_user_id=int(_require_env("ADMIN_USER_ID")),
             check_interval_minutes=int(os.getenv("CHECK_INTERVAL_MINUTES", "5")),
             db_path=os.getenv("DB_PATH", str(Path(__file__).resolve().parent.parent / "data.db")),
+            webapp_url=os.getenv("WEBAPP_URL") or None,
+            webapp_host=os.getenv("WEBAPP_HOST", "0.0.0.0"),
+            webapp_port=int(os.getenv("WEBAPP_PORT", "8080")),
         )
 
 

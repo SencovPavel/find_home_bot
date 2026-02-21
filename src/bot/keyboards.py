@@ -9,6 +9,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
+    WebAppInfo,
 )
 
 from src.data.cities import City, get_city_by_id, get_millioner_cities
@@ -39,9 +40,16 @@ def commands_reply_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def commands_inline_keyboard() -> InlineKeyboardMarkup:
-    """Inline-кнопки для быстрых действий (под сообщением /start)."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+def commands_inline_keyboard(
+    webapp_url: str | None = None,
+    user_id: int | None = None,
+    admin_user_id: int | None = None,
+) -> InlineKeyboardMarkup:
+    """Inline-кнопки для быстрых действий (под сообщением /start).
+
+    Кнопка «Открыть дашборд» показывается только администратору при заданном webapp_url.
+    """
+    rows: list[list[InlineKeyboardButton]] = [
         [
             InlineKeyboardButton(text="🔍 Поиск", callback_data="nav:search"),
             InlineKeyboardButton(text="📋 Фильтры", callback_data="nav:filters"),
@@ -50,7 +58,20 @@ def commands_inline_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="⏸ Пауза", callback_data="nav:pause"),
             InlineKeyboardButton(text="▶ Возобновить", callback_data="nav:resume"),
         ],
-    ])
+    ]
+    if (
+        webapp_url
+        and user_id is not None
+        and admin_user_id is not None
+        and user_id == admin_user_id
+    ):
+        rows.append([
+            InlineKeyboardButton(
+                text="📊 Открыть дашборд",
+                web_app=WebAppInfo(url=webapp_url),
+            ),
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 # ── Города ─────────────────────────────────────────────────────────
 
