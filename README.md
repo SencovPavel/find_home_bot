@@ -13,6 +13,9 @@ Telegram-бот для мониторинга объявлений аренды 
 - Отображение источника объявления (ЦИАН / Авито / Яндекс)
 - Периодическая проверка новых объявлений (по умолчанию каждые 5 минут)
 - Отправка фото объявления вместе с описанием
+- Уведомление при отсутствии объявлений по фильтрам («по таким требованиям вы можете не найти объект»)
+- Кнопки навигации: Reply-клавиатура и inline-кнопки для быстрого доступа к командам
+- Mini App дашборд (статус мониторинга, сводка фильтров) — только для администратора
 
 ## Требования
 
@@ -71,14 +74,14 @@ python -m src.main
 # Установить dev-зависимости
 python -m pip install ".[dev]"
 
-# Запустить тесты
+# Запустить тесты (требуется .env с BOT_TOKEN и ADMIN_USER_ID)
 pytest
 
 # Запустить тесты с подробным coverage-отчётом
 pytest --cov=src --cov-report=term-missing
 ```
 
-В проекте включен порог покрытия в `pyproject.toml` через `pytest-cov`.
+В проекте включен порог покрытия в `pyproject.toml` через `pytest-cov`. В CI переменные `BOT_TOKEN` и `ADMIN_USER_ID` задаются автоматически.
 
 ## Команды бота
 
@@ -156,7 +159,8 @@ chmod 600 .env
 - `BOT_TOKEN`
 - `ADMIN_USER_ID`
 - `CHECK_INTERVAL_MINUTES`
-- опционально `DB_PATH` (например `/home/botuser/apps/bot/data.db`)
+
+Опционально: `DB_PATH`, `WEBAPP_URL` (для Mini App дашборда, нужен HTTPS).
 
 ### 4) Создание systemd unit
 
@@ -231,55 +235,38 @@ sudo systemctl restart cian-rental-bot
 1. `test`:
    - устанавливается Python;
    - устанавливаются dev-зависимости;
-   - запускается `pytest` (включая порог coverage из `pyproject.toml`).
+   - запускается `pytest` с переменными `BOT_TOKEN` и `ADMIN_USER_ID` (включая порог coverage из `pyproject.toml`).
 2. `deploy` (только после `test`):
    - подключение к серверу по SSH-ключу;
-   - удаленный запуск `scripts/deploy.sh`;
-   - обновление кода, установка зависимостей, перезапуск и проверка `systemd`-сервиса.
+   - `git pull`, `pip install .`, перезапуск systemd-сервиса.
 
 Workflow: `.github/workflows/ci-cd.yml`
-Это единственный актуальный workflow для тестов и деплоя.
 
 ### 1) Создайте secrets в GitHub
 
 В репозитории: `Settings -> Secrets and variables -> Actions -> New repository secret`.
 
-Обязательные secrets для `.github/workflows/ci-cd.yml`:
+Обязательные secrets:
 
-| Secret | Где используется | Назначение | Пример |
-|---|---|---|---|
-| `SSH_HOST` | шаг `Add server to known_hosts`, шаг `Run deployment script on server` | Адрес сервера для SSH-подключения из GitHub Actions | `203.0.113.10` или `bot.example.com` |
-| `SSH_PORT` | шаг `Add server to known_hosts`, шаг `Run deployment script on server` | Порт SSH на сервере | `22` |
-| `SSH_USER` | шаг `Run deployment script on server` | Пользователь для SSH-доступа и выполнения деплоя | `botuser` |
-| `SSH_PRIVATE_KEY` | шаг `Prepare SSH key` | Приватный ключ, которым GitHub Actions аутентифицируется на сервере | содержимое файла `bot_deploy_key` |
-| `APP_DIR` | шаг `Run deployment script on server` | Абсолютный путь к директории приложения на сервере | `/home/botuser/apps/bot` |
-| `SYSTEMD_SERVICE` | шаг `Run deployment script on server` | Имя systemd-сервиса, который нужно перезапустить после обновления | `cian-rental-bot` |
+| Secret | Назначение |
+|---|---|
+| `DEPLOY_KEY` | Приватный SSH-ключ для деплоя (целиком, включая BEGIN/END) |
+| `SSH_KNOWN_HOSTS` | Содержимое `~/.ssh/known_hosts` для хоста (или оставить пустым — используется ssh-keyscan) |
+| `SSH_HOST` | Адрес сервера (IP или домен) |
+| `SSH_USER` | Пользователь для SSH (например `botuser`) |
 
-Важно:
-- все значения добавляются как `Repository secrets` (не `Variables`);
-- `SSH_PRIVATE_KEY` добавляйте целиком, включая строки `BEGIN/END`;
-- в `authorized_keys` на сервере должен быть добавлен соответствующий публичный ключ.
-
-Не используйте устаревшие имена секретов из старого workflow (`DEPLOY_KEY`, `HOST`, `USER`, `KNOWN_HOSTS`) — в текущем `ci-cd.yml` они не читаются.
+Путь к приложению и имя systemd-сервиса заданы в workflow; при необходимости отредактируйте `.github/workflows/ci-cd.yml` (шаг «Deploy via SSH»).
 
 ### 2) Подготовьте SSH-ключ для деплоя
 
-Локально (или на безопасной машине администрирования):
+Локально:
 
 ```bash
 ssh-keygen -t ed25519 -C "github-actions-deploy" -f ./bot_deploy_key
 ```
 
-- содержимое `bot_deploy_key` сохраните в `SSH_PRIVATE_KEY`;
-- содержимое `bot_deploy_key.pub` добавьте на сервер:
-
-```bash
-ssh botuser@YOUR_SERVER_IP
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-echo "PASTE_PUBLIC_KEY_HERE" >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-```
+- содержимое `bot_deploy_key` сохраните в `DEPLOY_KEY`;
+- содержимое `bot_deploy_key.pub` добавьте в `~/.ssh/authorized_keys` на сервере.
 
 ### 3) Разрешите restart сервиса без пароля (sudoers)
 
@@ -305,11 +292,6 @@ sudo -l -U botuser
 
 1. Сделайте небольшой commit в `main`.
 2. Откройте `Actions` и дождитесь завершения `CI/CD`.
-3. На сервере проверьте:
-
-```bash
-sudo systemctl status cian-rental-bot
-sudo journalctl -u cian-rental-bot -n 100 --no-pager
-```
+3. На сервере проверьте статус systemd-сервиса (имя указано в workflow, например `find-home-bot`).
 
 Если `test` падает, деплой не запускается — это ожидаемое поведение.

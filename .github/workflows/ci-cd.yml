@@ -26,6 +26,9 @@ jobs:
 
       - name: Run pytest
         run: pytest
+        env:
+          BOT_TOKEN: placeholder
+          ADMIN_USER_ID: "1"
 
   deploy:
     runs-on: ubuntu-latest
