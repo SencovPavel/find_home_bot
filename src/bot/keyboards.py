@@ -14,7 +14,7 @@ from aiogram.types import (
 
 from src.data.cities import City, get_city_by_id, get_millioner_cities
 
-BACK_BUTTON = InlineKeyboardButton(text="← Назад", callback_data="back")
+BACK_BUTTON = InlineKeyboardButton(text="← Назад", callback_data="back", style="primary")
 
 MAX_CITIES_SELECT = 10
 
@@ -54,12 +54,12 @@ def commands_inline_keyboard(
     """
     rows: list[list[InlineKeyboardButton]] = [
         [
-            InlineKeyboardButton(text="🔍 Поиск", callback_data="nav:search"),
-            InlineKeyboardButton(text="📋 Фильтры", callback_data="nav:filters"),
+            InlineKeyboardButton(text="🔍 Поиск", callback_data="nav:search", style="primary"),
+            InlineKeyboardButton(text="📋 Фильтры", callback_data="nav:filters", style="primary"),
         ],
         [
-            InlineKeyboardButton(text="⏸ Пауза", callback_data="nav:pause"),
-            InlineKeyboardButton(text="▶ Возобновить", callback_data="nav:resume"),
+            InlineKeyboardButton(text="⏸ Пауза", callback_data="nav:pause", style="danger"),
+            InlineKeyboardButton(text="▶ Возобновить", callback_data="nav:resume", style="success"),
         ],
     ]
     if (
@@ -72,6 +72,7 @@ def commands_inline_keyboard(
             InlineKeyboardButton(
                 text="📊 Открыть дашборд",
                 web_app=WebAppInfo(url=webapp_url),
+                style="primary",
             ),
         ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -87,7 +88,7 @@ def city_millioners_keyboard(selected: list[int] | None = None) -> InlineKeyboar
     row: List[InlineKeyboardButton] = []
     for c in cities:
         mark = "✓ " if c.id in selected else ""
-        row.append(InlineKeyboardButton(text=f"{mark}{c.name}", callback_data=f"city:{c.id}"))
+        row.append(InlineKeyboardButton(text=f"{mark}{c.name}", callback_data=f"city:{c.id}", style="primary"))
         if len(row) == 2:
             buttons.append(row)
             row = []
@@ -97,8 +98,8 @@ def city_millioners_keyboard(selected: list[int] | None = None) -> InlineKeyboar
         r = get_city_by_id(region_id)
         if r:
             mark = "✓ " if r.id in selected else ""
-            buttons.append([InlineKeyboardButton(text=f"{mark}{r.name}", callback_data=f"city:{r.id}")])
-    buttons.append([InlineKeyboardButton(text="Готово →", callback_data="city:done")])
+            buttons.append([InlineKeyboardButton(text=f"{mark}{r.name}", callback_data=f"city:{r.id}", style="primary")])
+    buttons.append([InlineKeyboardButton(text="Готово →", callback_data="city:done", style="primary")])
     buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -112,8 +113,8 @@ def city_search_results_keyboard(
     buttons = []
     for c in cities:
         mark = "✓ " if c.id in selected else ""
-        buttons.append([InlineKeyboardButton(text=f"{mark}{c.name}", callback_data=f"city:{c.id}")])
-    buttons.append([InlineKeyboardButton(text="Готово →", callback_data="city:done")])
+        buttons.append([InlineKeyboardButton(text=f"{mark}{c.name}", callback_data=f"city:{c.id}", style="primary")])
+    buttons.append([InlineKeyboardButton(text="Готово →", callback_data="city:done", style="primary")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -131,15 +132,16 @@ def rooms_keyboard(selected: list[int] | None = None) -> InlineKeyboardMarkup:
         row.append(InlineKeyboardButton(
             text=f"{mark}{n}-комн.",
             callback_data=f"rooms:{n}",
+            style="primary",
         ))
 
     buttons.append(row)
     studio_mark = "✓ " if 0 in selected else ""
     buttons.append([
-        InlineKeyboardButton(text=f"{studio_mark}Студия", callback_data="rooms:0"),
+        InlineKeyboardButton(text=f"{studio_mark}Студия", callback_data="rooms:0", style="primary"),
     ])
     buttons.append([
-        InlineKeyboardButton(text="Готово →", callback_data="rooms:done"),
+        InlineKeyboardButton(text="Готово →", callback_data="rooms:done", style="primary"),
     ])
     buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -164,11 +166,12 @@ def price_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text=label,
             callback_data=f"price:{pmin}:{pmax}",
+            style="primary",
         )]
         for pmin, pmax, label in PRICE_RANGES
     ]
     buttons.append([
-        InlineKeyboardButton(text="Ввести вручную", callback_data="price:custom"),
+        InlineKeyboardButton(text="Ввести вручную", callback_data="price:custom", style="primary"),
     ])
     buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -185,11 +188,12 @@ def area_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text=f"от {a} м²",
             callback_data=f"area:{a}",
+            style="primary",
         )]
         for a in AREA_OPTIONS
     ]
     buttons.append([
-        InlineKeyboardButton(text="Не важно", callback_data="area:0"),
+        InlineKeyboardButton(text="Не важно", callback_data="area:0", style="primary"),
     ])
     buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -206,11 +210,12 @@ def kitchen_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text=f"от {k} м²",
             callback_data=f"kitchen:{k}",
+            style="primary",
         )]
         for k in KITCHEN_OPTIONS
     ]
     buttons.append([
-        InlineKeyboardButton(text="Не важно", callback_data="kitchen:0"),
+        InlineKeyboardButton(text="Не важно", callback_data="kitchen:0", style="primary"),
     ])
     buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -235,13 +240,14 @@ def renovation_keyboard(selected: list[str] | None = None) -> InlineKeyboardMark
         buttons.append([InlineKeyboardButton(
             text=f"{mark}{label}",
             callback_data=f"renovation:{key}",
+            style="primary",
         )])
 
     buttons.append([
-        InlineKeyboardButton(text="Любой ремонт", callback_data="renovation:any"),
+        InlineKeyboardButton(text="Любой ремонт", callback_data="renovation:any", style="primary"),
     ])
     buttons.append([
-        InlineKeyboardButton(text="Готово →", callback_data="renovation:done"),
+        InlineKeyboardButton(text="Готово →", callback_data="renovation:done", style="primary"),
     ])
     buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -252,8 +258,8 @@ def renovation_keyboard(selected: list[str] | None = None) -> InlineKeyboardMark
 def pets_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура: фильтровать объявления с запретом на животных."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Скрывать с запретом на животных", callback_data="pets:1")],
-        [InlineKeyboardButton(text="Показывать все", callback_data="pets:0")],
+        [InlineKeyboardButton(text="Скрывать с запретом на животных", callback_data="pets:1", style="primary")],
+        [InlineKeyboardButton(text="Показывать все", callback_data="pets:0", style="primary")],
         [BACK_BUTTON],
     ])
 
@@ -263,11 +269,11 @@ def pets_keyboard() -> InlineKeyboardMarkup:
 def commission_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура: допустимый максимум комиссии в процентах."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Только без комиссии", callback_data="commission:0")],
-        [InlineKeyboardButton(text="До 30%", callback_data="commission:30")],
-        [InlineKeyboardButton(text="До 50%", callback_data="commission:50")],
-        [InlineKeyboardButton(text="Не важно", callback_data="commission:100")],
-        [InlineKeyboardButton(text="Ввести свой %", callback_data="commission:custom")],
+        [InlineKeyboardButton(text="Только без комиссии", callback_data="commission:0", style="primary")],
+        [InlineKeyboardButton(text="До 30%", callback_data="commission:30", style="primary")],
+        [InlineKeyboardButton(text="До 50%", callback_data="commission:50", style="primary")],
+        [InlineKeyboardButton(text="Не важно", callback_data="commission:100", style="primary")],
+        [InlineKeyboardButton(text="Ввести свой %", callback_data="commission:custom", style="primary")],
         [BACK_BUTTON],
     ])
 
@@ -288,11 +294,12 @@ def tolerance_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text=label,
             callback_data=f"tolerance:{value}",
+            style="primary",
         )]
         for value, label in TOLERANCE_OPTIONS
     ]
     buttons.append([
-        InlineKeyboardButton(text="Ввести свой %", callback_data="tolerance:custom"),
+        InlineKeyboardButton(text="Ввести свой %", callback_data="tolerance:custom", style="primary"),
     ])
     buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -315,11 +322,12 @@ def initial_listings_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text=label,
             callback_data=f"initial_listings:{value}",
+            style="primary",
         )]
         for value, label in INITIAL_LISTINGS_OPTIONS
     ]
     buttons.append([
-        InlineKeyboardButton(text="Ввести число", callback_data="initial_listings:custom"),
+        InlineKeyboardButton(text="Ввести число", callback_data="initial_listings:custom", style="primary"),
     ])
     buttons.append([BACK_BUTTON])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -346,20 +354,20 @@ def edit_filter_menu_keyboard() -> InlineKeyboardMarkup:
     buttons: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for key, label in EDIT_FILTER_OPTIONS:
-        row.append(InlineKeyboardButton(text=label, callback_data=f"edit_filter:{key}"))
+        row.append(InlineKeyboardButton(text=label, callback_data=f"edit_filter:{key}", style="primary"))
         if len(row) == 3:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
-    buttons.append([InlineKeyboardButton(text="← К фильтрам", callback_data="edit_filter:back")])
+    buttons.append([InlineKeyboardButton(text="← К фильтрам", callback_data="edit_filter:back", style="primary")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def edit_filter_single_button_keyboard() -> InlineKeyboardMarkup:
     """Одна кнопка «Изменить фильтр» для cmd_filters."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✏️ Изменить фильтр", callback_data="edit_filter:menu")],
+        [InlineKeyboardButton(text="✏️ Изменить фильтр", callback_data="edit_filter:menu", style="primary")],
     ])
 
 
@@ -368,7 +376,7 @@ def edit_filter_single_button_keyboard() -> InlineKeyboardMarkup:
 def confirm_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура подтверждения настроек и запуска мониторинга."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Запустить мониторинг", callback_data="confirm:start")],
-        [InlineKeyboardButton(text="Настроить заново", callback_data="confirm:restart")],
+        [InlineKeyboardButton(text="Запустить мониторинг", callback_data="confirm:start", style="success")],
+        [InlineKeyboardButton(text="Настроить заново", callback_data="confirm:restart", style="danger")],
         [BACK_BUTTON],
     ])

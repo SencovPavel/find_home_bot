@@ -21,10 +21,21 @@
       border-radius: 8px;
       margin-bottom: 16px;
       font-weight: 500;
+      background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+      color: var(--tg-theme-text-color, #000);
     }
-    .status.active { background: #e8f5e9; color: #2e7d32; }
-    .status.paused { background: #fff3e0; color: #e65100; }
-    .status.empty { background: #f5f5f5; color: #616161; }
+    .status.active {
+      background: var(--tg-theme-button-color, #3390ec);
+      color: var(--tg-theme-button-text-color, #fff);
+    }
+    .status.paused {
+      background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+      color: var(--tg-theme-destructive-text-color, #c62828);
+    }
+    .status.empty {
+      background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+      color: var(--tg-theme-hint-color, #616161);
+    }
     .filters {
       white-space: pre-wrap;
       font-size: 0.9rem;

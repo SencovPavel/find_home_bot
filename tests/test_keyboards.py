@@ -244,3 +244,26 @@ def test_commands_inline_keyboard_rows() -> None:
     assert any("Фильтры" in t for t in texts)
     assert any("Пауза" in t for t in texts)
     assert any("Возобновить" in t for t in texts)
+
+
+def test_inline_buttons_have_style_for_readability() -> None:
+    """Все inline-кнопки имеют style для чёткой видимости текста."""
+    kb = commands_inline_keyboard()
+    all_buttons = [btn for row in kb.inline_keyboard for btn in row]
+    for btn in all_buttons:
+        assert btn.style is not None
+        assert btn.style in ("primary", "success", "danger")
+
+
+def test_confirm_keyboard_has_semantic_styles() -> None:
+    """Клавиатура подтверждения: success для запуска, danger для перезапуска."""
+    kb = confirm_keyboard()
+    all_buttons = [btn for row in kb.inline_keyboard for btn in row]
+    for btn in all_buttons:
+        assert btn.style is not None
+        if "Запустить мониторинг" in (btn.text or ""):
+            assert btn.style == "success"
+        elif "Настроить заново" in (btn.text or ""):
+            assert btn.style == "danger"
+        else:
+            assert btn.style == "primary"
