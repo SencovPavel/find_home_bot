@@ -52,7 +52,8 @@ jobs:
         run: |
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
             cd /home/botuser/apps/bot &&
-            git pull &&
+            git fetch origin &&
+            git reset --hard origin/main &&
             source .venv/bin/activate &&
             pip install . &&
             sudo systemctl restart find-home-bot
