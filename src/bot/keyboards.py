@@ -34,6 +34,9 @@ def commands_reply_keyboard() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="/pause"),
                 KeyboardButton(text="/resume"),
             ],
+            [
+                KeyboardButton(text="/help"),
+            ],
         ],
         resize_keyboard=True,
         is_persistent=True,

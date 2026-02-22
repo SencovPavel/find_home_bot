@@ -179,3 +179,66 @@ async def test_cmd_search_can_skip_rate_limit_for_internal_restart() -> None:
 
     assert state.current_state == handlers.SearchWizard.city
     assert any("Шаг 1/" in text for text in message.answers)
+
+
+# ── /help и неизвестные команды ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cmd_help_returns_list_of_commands() -> None:
+    """При /help приходит список всех команд."""
+    message = DummyMessage(user_id=1, text="/help")
+
+    await handlers.cmd_help(message)  # type: ignore[arg-type]
+
+    assert len(message.answers) == 1
+    text = message.answers[0]
+    assert "/start" in text
+    assert "/search" in text
+    assert "/filters" in text
+    assert "/pause" in text
+    assert "/resume" in text
+    assert "/help" in text
+
+
+def test_find_closest_command_typo_suggests_search() -> None:
+    """При /serch подсказка /search."""
+    assert handlers._find_closest_command("/serch") == "search"
+    assert handlers._find_closest_command("serch") == "search"
+
+
+def test_find_closest_command_unknown_no_suggestion() -> None:
+    """При /xyz нет близких совпадений."""
+    assert handlers._find_closest_command("/xyz") is None
+    assert handlers._find_closest_command("/abcdef") is None
+
+
+def test_find_closest_command_other_typos() -> None:
+    """Опечатки в других командах."""
+    assert handlers._find_closest_command("/flters") == "filters"
+    assert handlers._find_closest_command("/paus") == "pause"
+    assert handlers._find_closest_command("/resum") == "resume"
+
+
+@pytest.mark.asyncio
+async def test_cmd_unknown_suggests_help() -> None:
+    """При неизвестной команде приходит подсказка ввести /help."""
+    message = DummyMessage(user_id=1, text="/unknown")
+
+    await handlers.cmd_unknown(message)  # type: ignore[arg-type]
+
+    assert len(message.answers) == 1
+    assert "/help" in message.answers[0]
+    assert "Неизвестная команда" in message.answers[0]
+
+
+@pytest.mark.asyncio
+async def test_cmd_unknown_with_typo_suggests_closest() -> None:
+    """При /serch в ответе есть подсказка «Возможно, вы имели в виду /search»."""
+    message = DummyMessage(user_id=1, text="/serch")
+
+    await handlers.cmd_unknown(message)  # type: ignore[arg-type]
+
+    assert len(message.answers) == 1
+    assert "Возможно, вы имели в виду /search" in message.answers[0]
+    assert "/help" in message.answers[0]

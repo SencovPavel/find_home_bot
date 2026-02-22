@@ -206,15 +206,17 @@ def test_confirm_keyboard_has_start_and_restart() -> None:
 
 
 def test_commands_reply_keyboard_rows() -> None:
-    """Reply-клавиатура навигации: две строки с командами."""
+    """Reply-клавиатура навигации: три строки с командами."""
     kb = commands_reply_keyboard()
-    assert len(kb.keyboard) == 2
+    assert len(kb.keyboard) == 3
     row1_texts = [btn.text for btn in kb.keyboard[0]]
     row2_texts = [btn.text for btn in kb.keyboard[1]]
+    row3_texts = [btn.text for btn in kb.keyboard[2]]
     assert "/search" in row1_texts
     assert "/filters" in row1_texts
     assert "/pause" in row2_texts
     assert "/resume" in row2_texts
+    assert "/help" in row3_texts
     assert kb.resize_keyboard is True
     assert kb.is_persistent is True
 

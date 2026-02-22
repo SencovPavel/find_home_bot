@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -87,7 +88,8 @@ async def cmd_start(message: Message) -> None:
         "/search — настроить фильтры и начать поиск\n"
         "/filters — посмотреть текущие фильтры\n"
         "/pause — приостановить мониторинг\n"
-        "/resume — возобновить мониторинг",
+        "/resume — возобновить мониторинг\n"
+        "/help — список всех команд",
         reply_markup=commands_reply_keyboard(),
         parse_mode="HTML",
     )
@@ -99,6 +101,25 @@ async def cmd_start(message: Message) -> None:
             user_id=user_id,
             admin_user_id=config.admin_user_id,
         ),
+    )
+
+
+# ── /help ──────────────────────────────────────────────────────────
+
+@router.message(Command("help"))
+async def cmd_help(message: Message) -> None:
+    """Список всех доступных команд."""
+    if await _is_rate_limited_message(message):
+        return
+    await message.answer(
+        "<b>Доступные команды:</b>\n\n"
+        "/start — приветствие и инструкция\n"
+        "/search — настроить фильтры и начать поиск\n"
+        "/filters — посмотреть текущие фильтры\n"
+        "/pause — приостановить мониторинг\n"
+        "/resume — возобновить мониторинг\n"
+        "/help — этот список команд",
+        parse_mode="HTML",
     )
 
 
@@ -1246,6 +1267,37 @@ async def cmd_resume(message: Message, db: Database) -> None:
 
     await db.set_active(message.from_user.id, active=True)  # type: ignore[union-attr]
     await message.answer("▶️ Мониторинг возобновлён!")
+
+
+# ── Неизвестная команда ────────────────────────────────────────────
+
+KNOWN_COMMANDS = ("start", "search", "filters", "pause", "resume", "help")
+
+
+def _find_closest_command(typed: str) -> str | None:
+    """Возвращает наиболее похожую команду или None, если нет близких совпадений."""
+    typed_clean = typed.lstrip("/").split()[0] if typed else ""
+    if not typed_clean:
+        return None
+    matches = difflib.get_close_matches(typed_clean, KNOWN_COMMANDS, n=1, cutoff=0.6)
+    return matches[0] if matches else None
+
+
+@router.message(F.text.startswith("/"))
+async def cmd_unknown(message: Message) -> None:
+    """Реакция на неизвестную команду с подсказкой похожей команды."""
+    if await _is_rate_limited_message(message):
+        return
+    typed = (message.text or "").strip()
+    closest = _find_closest_command(typed)
+    if closest:
+        text = (
+            f"Неизвестная команда. Возможно, вы имели в виду /{closest}?\n\n"
+            "Введите /help, чтобы увидеть список всех доступных функций."
+        )
+    else:
+        text = "Неизвестная команда. Введите /help, чтобы увидеть список доступных функций."
+    await message.answer(text)
 
 
 # ── Утилиты ────────────────────────────────────────────────────────
