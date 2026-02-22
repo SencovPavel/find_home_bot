@@ -120,7 +120,7 @@ class UserFilter:
             return False
         if self.renovation_types and listing.renovation not in self.renovation_types:
             return False
-        if self.pets_allowed and _has_pet_ban(listing.description):
+        if self.pets_allowed and _listing_has_pet_ban(listing):
             return False
         if self.commission_max_percent < 100:
             parsed = _parse_commission_percent(listing.commission)
@@ -144,7 +144,7 @@ class UserFilter:
             return None
         if self.renovation_types and listing.renovation not in self.renovation_types:
             return None
-        if self.pets_allowed and _has_pet_ban(listing.description):
+        if self.pets_allowed and _listing_has_pet_ban(listing):
             return None
         if self.commission_max_percent < 100:
             parsed = _parse_commission_percent(listing.commission)
@@ -222,10 +222,16 @@ def _parse_commission_percent(commission: str) -> int | None:
     return None
 
 
-def _has_pet_ban(description: str) -> bool:
-    """Эвристика: проверяет наличие явного запрета на животных в тексте описания."""
-    lower = description.lower()
+def _has_pet_ban(text: str) -> bool:
+    """Эвристика: проверяет наличие явного запрета на животных в тексте."""
+    lower = (text or "").lower()
     return any(phrase in lower for phrase in _PET_BAN_PHRASES)
+
+
+def _listing_has_pet_ban(listing: Listing) -> bool:
+    """Проверяет запрет на животных в title и description."""
+    text = f"{listing.title or ''} {listing.description or ''}"
+    return _has_pet_ban(text)
 
 
 def _has_commission(commission: str) -> bool:

@@ -224,6 +224,16 @@ def test_offer_to_listing_generates_title_if_missing() -> None:
     assert "45.0 м²" in listing.title
 
 
+def test_offer_with_pet_ban_in_title_filtered_by_user_filter() -> None:
+    """Оффер с title='Квартира, без животных' и пустым description даёт listing, не проходящий UserFilter при pets_allowed=True."""
+    offer = _make_offer(title="Квартира, без животных", description="")
+    listing = _offer_to_listing(offer)
+
+    assert listing is not None
+    user_filter = UserFilter(user_id=1, pets_allowed=True)
+    assert user_filter.matches(listing) is False
+
+
 def test_parse_rooms_key_numeric() -> None:
     """Числовые ключи корректно преобразуются."""
     assert _parse_rooms_key("1") == 1

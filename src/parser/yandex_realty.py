@@ -189,6 +189,8 @@ def _offer_to_listing(offer: dict) -> Listing | None:
     renovation = _RENOVATION_MAP.get(renovation_raw, renovation_raw)
 
     description = offer.get("description", "")
+    if offer.get("petsAllowed") is False:
+        description = (description + " без животных").strip()
 
     photos: list[str] = []
     for img_url in (offer.get("appLargeImages") or offer.get("fullImages") or [])[:5]:

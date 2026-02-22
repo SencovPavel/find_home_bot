@@ -66,6 +66,15 @@ def test_user_filter_allows_pet_ban_when_pets_filter_disabled() -> None:
     assert user_filter.matches(listing) is True
 
 
+def test_listing_has_pet_ban_in_title() -> None:
+    """Объявление с «Без животных» только в title (description пустой) отклоняется при pets_allowed=True."""
+    listing = _listing_with_description("")
+    listing.title = "2-комн., 45 м², без животных"
+    user_filter = UserFilter(user_id=1, pets_allowed=True)
+
+    assert user_filter.matches(listing) is False
+
+
 def test_user_filter_rejects_by_price_min() -> None:
     """Объявление дешевле price_min отклоняется."""
     listing = _listing_with_description("Квартира")
