@@ -82,6 +82,14 @@ def test_rooms_keyboard_marks_selected() -> None:
     assert not any("✓" in t and "1-комн." in t for t in texts)
 
 
+def test_rooms_keyboard_marks_studio() -> None:
+    """Студия помечается галочкой при выборе."""
+    kb = rooms_keyboard(selected=[0])
+    texts = [btn.text for row in kb.inline_keyboard for btn in row]
+
+    assert any("✓" in t and "Студия" in t for t in texts)
+
+
 def test_rooms_keyboard_has_done_button() -> None:
     """Клавиатура содержит кнопку завершения."""
     kb = rooms_keyboard()

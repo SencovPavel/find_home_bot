@@ -134,8 +134,9 @@ def rooms_keyboard(selected: list[int] | None = None) -> InlineKeyboardMarkup:
         ))
 
     buttons.append(row)
+    studio_mark = "✓ " if 0 in selected else ""
     buttons.append([
-        InlineKeyboardButton(text="Студия", callback_data="rooms:0"),
+        InlineKeyboardButton(text=f"{studio_mark}Студия", callback_data="rooms:0"),
     ])
     buttons.append([
         InlineKeyboardButton(text="Готово →", callback_data="rooms:done"),

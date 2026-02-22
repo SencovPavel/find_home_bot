@@ -205,7 +205,9 @@ async def on_city(callback: CallbackQuery, state: FSMContext, db: Database) -> N
         cities_text = get_cities_display(cities)
         await callback.message.edit_text(  # type: ignore[union-attr]
             f"🏙 Города: <b>{cities_text}</b>\n\n"
-            f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
+            f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат\n\n"
+            "Выбрано: <b>Не выбрано</b>\n"
+            "Добавьте варианты или нажмите Готово:",
             reply_markup=rooms_keyboard(),
             parse_mode="HTML",
         )
@@ -261,7 +263,7 @@ async def on_rooms(callback: CallbackQuery, state: FSMContext, db: Database) -> 
             await callback.answer()
             return
         rooms = data.get("rooms", [])
-        rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
+        rooms_text = _get_rooms_display(rooms)
         await callback.message.edit_text(  # type: ignore[union-attr]
             f"🚪 Комнаты: <b>{rooms_text}</b>\n\n"
             f"💰 <b>Шаг 3/{TOTAL_STEPS}:</b> Выберите ценовой диапазон",
@@ -275,14 +277,21 @@ async def on_rooms(callback: CallbackQuery, state: FSMContext, db: Database) -> 
             await _reject_bad_callback(callback)
             return
         data = await state.get_data()
-        rooms: list[int] = data.get("rooms", [])
+        rooms: list[int] = list(data.get("rooms", []))
         if room_num in rooms:
-            rooms.remove(room_num)
+            rooms = [r for r in rooms if r != room_num]
         else:
-            rooms.append(room_num)
+            rooms = sorted(rooms + [room_num])
         await state.update_data(rooms=rooms)
-        await callback.message.edit_reply_markup(  # type: ignore[union-attr]
+        cities_text = get_cities_display(data.get("cities", []))
+        rooms_text = _get_rooms_display(rooms)
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            f"🏙 Города: <b>{cities_text}</b>\n\n"
+            f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат\n\n"
+            f"Выбрано: <b>{rooms_text}</b>\n"
+            "Добавьте варианты или нажмите Готово:",
             reply_markup=rooms_keyboard(rooms),
+            parse_mode="HTML",
         )
 
     await callback.answer()
@@ -812,19 +821,21 @@ async def on_back(callback: CallbackQuery, state: FSMContext, db: Database) -> N
         )
     elif current == SearchWizard.price.state:
         rooms = data.get("rooms", [])
-        rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
+        rooms_text = _get_rooms_display(rooms)
         cities = data.get("cities", [1])
         cities_text = get_cities_display(cities)
         await state.set_state(SearchWizard.rooms)
         await msg.edit_text(
             f"🏙 Города: <b>{cities_text}</b>\n\n"
-            f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат",
+            f"🚪 <b>Шаг 2/{TOTAL_STEPS}:</b> Выберите количество комнат\n\n"
+            f"Выбрано: <b>{rooms_text}</b>\n"
+            "Добавьте варианты или нажмите Готово:",
             reply_markup=rooms_keyboard(rooms),
             parse_mode="HTML",
         )
     elif current == SearchWizard.area.state:
         rooms = data.get("rooms", [])
-        rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
+        rooms_text = _get_rooms_display(rooms)
         await state.set_state(SearchWizard.price)
         await msg.edit_text(
             f"🚪 Комнаты: <b>{rooms_text}</b>\n\n"
@@ -1084,7 +1095,7 @@ async def on_edit_filter_select(callback: CallbackQuery, state: FSMContext, db: 
         )
     elif edit_field == "rooms":
         await state.set_state(SearchWizard.rooms)
-        rooms_text = ", ".join(f"{r}-комн." for r in sorted(user_filter.rooms)) if user_filter.rooms else "Любые"
+        rooms_text = _get_rooms_display(user_filter.rooms)
         cities_text = get_cities_display(user_filter.cities)
         await msg.edit_text(
             f"✏️ <b>Изменить комнаты</b>\n\n"
@@ -1096,7 +1107,7 @@ async def on_edit_filter_select(callback: CallbackQuery, state: FSMContext, db: 
     elif edit_field == "price":
         await state.set_state(SearchWizard.price)
         rooms = user_filter.rooms
-        rooms_text = ", ".join(f"{r}-комн." for r in sorted(rooms)) if rooms else "Любые"
+        rooms_text = _get_rooms_display(rooms)
         await msg.edit_text(
             f"✏️ <b>Изменить цену</b>\n\nТекущий диапазон: {_price_range_text(user_filter.price_min, user_filter.price_max)}\n\n"
             f"Выберите ценовой диапазон:",
@@ -1330,6 +1341,13 @@ def _commission_label(commission_max_percent: int) -> str:
     return f"До {commission_max_percent}%"
 
 
+def _get_rooms_display(rooms: list[int]) -> str:
+    """0 → Студия, 1 → 1-комн., пусто → Любые."""
+    if not rooms:
+        return "Любые"
+    return ", ".join("Студия" if r == 0 else f"{r}-комн." for r in sorted(rooms))
+
+
 def _price_range_text(price_min: int, price_max: int) -> str:
     if price_min and price_max:
         return f"{price_min:,} – {price_max:,} ₽".replace(",", " ")
@@ -1348,10 +1366,7 @@ def _build_summary(data: dict) -> str:
     lines.append(f"🏙 Города: {get_cities_display(cities)}")
 
     rooms = data.get("rooms", [])
-    if rooms:
-        lines.append(f"🚪 Комнаты: {', '.join(str(r) for r in sorted(rooms))}")
-    else:
-        lines.append("🚪 Комнаты: Любые")
+    lines.append(f"🚪 Комнаты: {_get_rooms_display(rooms)}")
 
     lines.append(f"💰 Цена: {_price_range_text(data.get('price_min', 0), data.get('price_max', 0))}")
 
