@@ -40,6 +40,11 @@ CREATE TABLE IF NOT EXISTS seen_listings (
     sent_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (source, listing_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS bot_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 _MIGRATIONS = [
@@ -204,6 +209,32 @@ class Database:
         await self.db.execute(
             "DELETE FROM seen_listings WHERE sent_at < datetime('now', ?)",
             (f"-{days} days",),
+        )
+        await self.db.commit()
+
+    # ── Конфигурация темы группы ────────────────────────────────────
+
+    async def get_group_topic_config(self) -> tuple[int, int] | None:
+        """Возвращает (chat_id, message_thread_id) темы группы или None."""
+        cursor = await self.db.execute(
+            "SELECT key, value FROM bot_settings WHERE key IN ('group_chat_id', 'group_topic_id')"
+        )
+        rows = {row["key"]: int(row["value"]) for row in await cursor.fetchall()}
+        chat_id = rows.get("group_chat_id")
+        thread_id = rows.get("group_topic_id")
+        if chat_id is not None and thread_id is not None:
+            return (chat_id, thread_id)
+        return None
+
+    async def set_group_topic_config(self, chat_id: int, message_thread_id: int) -> None:
+        """Сохраняет chat_id и message_thread_id темы группы для отправки объявлений."""
+        await self.db.execute(
+            "INSERT OR REPLACE INTO bot_settings (key, value) VALUES ('group_chat_id', ?)",
+            (str(chat_id),),
+        )
+        await self.db.execute(
+            "INSERT OR REPLACE INTO bot_settings (key, value) VALUES ('group_topic_id', ?)",
+            (str(message_thread_id),),
         )
         await self.db.commit()
 

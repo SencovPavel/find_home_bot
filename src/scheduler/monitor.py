@@ -14,6 +14,7 @@ from src.parser.cian import search_listings as cian_search
 
 from src.parser.models import Listing, UserFilter
 from src.parser.yandex_realty import search_listings as yandex_search
+from src.config import Config
 from src.storage.database import Database
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,23 @@ logger = logging.getLogger(__name__)
 MAX_PHOTOS_PER_LISTING = 4
 
 
-async def check_new_listings(bot: Bot, db: Database) -> None:
+async def _resolve_destination(
+    db: Database,
+    user_filter: UserFilter,
+    config: Config,
+) -> tuple[int, Optional[int]]:
+    """Возвращает (chat_id, message_thread_id) для отправки. thread_id=None — личка."""
+    if user_filter.user_id != config.admin_user_id:
+        return (user_filter.user_id, None)
+    topic_config = await db.get_group_topic_config()
+    if topic_config is not None:
+        return topic_config
+    if config.group_chat_id is not None and config.group_topic_id is not None:
+        return (config.group_chat_id, config.group_topic_id)
+    return (user_filter.user_id, None)
+
+
+async def check_new_listings(bot: Bot, db: Database, config: Config) -> None:
     """Проверяет новые объявления для всех пользователей с активным мониторингом."""
     active_filters = await db.get_active_filters()
 
@@ -33,21 +50,33 @@ async def check_new_listings(bot: Bot, db: Database) -> None:
 
     for user_filter in active_filters:
         try:
-            await _process_user(bot, db, user_filter)
+            await _process_user(bot, db, user_filter, config)
         except Exception:
             logger.exception(
                 "Ошибка при обработке пользователя %d", user_filter.user_id
             )
 
 
-async def _send_empty_listings_notification(bot: Bot, user_id: int) -> None:
+async def _send_empty_listings_notification(
+    bot: Bot,
+    chat_id: int,
+    *,
+    message_thread_id: Optional[int] = None,
+) -> None:
     """Отправляет уведомление об отсутствии объявлений по фильтрам."""
     text = format_empty_listings_message()
-    await bot.send_message(chat_id=user_id, text=text, parse_mode="HTML")
+    kwargs: dict = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    if message_thread_id is not None:
+        kwargs["message_thread_id"] = message_thread_id
+    await bot.send_message(**kwargs)
 
 
-async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None:
+async def _process_user(
+    bot: Bot, db: Database, user_filter: UserFilter, config: Config
+) -> None:
     """Парсит все площадки, фильтрует и отправляет новые объявления одному пользователю."""
+    chat_id, message_thread_id = await _resolve_destination(db, user_filter, config)
+
     listings = await _aggregate_listings(user_filter)
     sent_count = 0
     approx_count = 0
@@ -64,7 +93,9 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
 
         if matches_strict:
             try:
-                await _send_listing(bot, user_filter.user_id, listing)
+                await _send_listing(
+                    bot, chat_id, listing, message_thread_id=message_thread_id
+                )
                 await db.mark_seen(listing.source.value, listing.listing_id, user_filter.user_id)
                 sent_count += 1
             except Exception:
@@ -79,7 +110,13 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
         deviations = matches_approx
         if deviations is not None:
             try:
-                await _send_listing(bot, user_filter.user_id, listing, deviations=deviations)
+                await _send_listing(
+                    bot,
+                    chat_id,
+                    listing,
+                    message_thread_id=message_thread_id,
+                    deviations=deviations,
+                )
                 await db.mark_seen(listing.source.value, listing.listing_id, user_filter.user_id)
                 approx_count += 1
             except Exception:
@@ -99,7 +136,9 @@ async def _process_user(bot: Bot, db: Database, user_filter: UserFilter) -> None
         )
     elif total_matching == 0 and user_filter.empty_notified_at is None:
         try:
-            await _send_empty_listings_notification(bot, user_filter.user_id)
+            await _send_empty_listings_notification(
+                bot, chat_id, message_thread_id=message_thread_id
+            )
             await db.mark_empty_notified(user_filter.user_id)
         except Exception:
             logger.exception(
@@ -134,6 +173,7 @@ async def send_initial_listings(
     bot: Bot,
     db: Database,
     user_filter: UserFilter,
+    config: Config,
 ) -> int:
     """Отправляет до initial_listings_count объявлений при старте мониторинга.
 
@@ -143,6 +183,8 @@ async def send_initial_listings(
     limit = user_filter.initial_listings_count
     if limit <= 0:
         return 0
+
+    chat_id, message_thread_id = await _resolve_destination(db, user_filter, config)
 
     try:
         listings = await _aggregate_listings(user_filter, pages=1)
@@ -178,7 +220,11 @@ async def send_initial_listings(
     for listing, deviations in to_send[:limit]:
         try:
             await _send_listing(
-                bot, user_filter.user_id, listing, deviations=deviations
+                bot,
+                chat_id,
+                listing,
+                message_thread_id=message_thread_id,
+                deviations=deviations,
             )
             await db.mark_seen(
                 listing.source.value, listing.listing_id, user_filter.user_id
@@ -200,7 +246,9 @@ async def send_initial_listings(
         )
     elif not matched_but_seen:
         try:
-            await _send_empty_listings_notification(bot, user_filter.user_id)
+            await _send_empty_listings_notification(
+                bot, chat_id, message_thread_id=message_thread_id
+            )
             await db.mark_empty_notified(user_filter.user_id)
         except Exception:
             logger.exception(
@@ -212,13 +260,18 @@ async def send_initial_listings(
 
 async def _send_listing(
     bot: Bot,
-    user_id: int,
+    chat_id: int,
     listing: Listing,
     *,
+    message_thread_id: Optional[int] = None,
     deviations: Optional[List[str]] = None,
 ) -> None:
-    """Отправляет объявление пользователю: фото + текст."""
+    """Отправляет объявление: фото + текст в chat_id, опционально в тему."""
     text = format_listing_approx(listing, deviations) if deviations else format_listing(listing)
+
+    send_kwargs: dict = {"chat_id": chat_id}
+    if message_thread_id is not None:
+        send_kwargs["message_thread_id"] = message_thread_id
 
     if listing.photos:
         photos = listing.photos[:MAX_PHOTOS_PER_LISTING]
@@ -230,11 +283,11 @@ async def _send_listing(
             )
             for i, url in enumerate(photos)
         ]
-        await bot.send_media_group(chat_id=user_id, media=media)
+        await bot.send_media_group(media=media, **send_kwargs)
     else:
         await bot.send_message(
-            chat_id=user_id,
             text=text,
             parse_mode="HTML",
             disable_web_page_preview=False,
+            **send_kwargs,
         )

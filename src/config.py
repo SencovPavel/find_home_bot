@@ -20,6 +20,17 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _optional_int_env(name: str) -> int | None:
+    """Возвращает int из переменной окружения или None, если не задана."""
+    value = os.getenv(name)
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 @dataclass(frozen=True)
 class Config:
     """Неизменяемая конфигурация приложения."""
@@ -31,6 +42,8 @@ class Config:
     webapp_url: str | None
     webapp_host: str
     webapp_port: int
+    group_chat_id: int | None
+    group_topic_id: int | None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -43,6 +56,8 @@ class Config:
             webapp_url=os.getenv("WEBAPP_URL") or None,
             webapp_host=os.getenv("WEBAPP_HOST", "0.0.0.0"),
             webapp_port=int(os.getenv("WEBAPP_PORT", "8080")),
+            group_chat_id=_optional_int_env("GROUP_CHAT_ID"),
+            group_topic_id=_optional_int_env("GROUP_TOPIC_ID"),
         )
 
 

@@ -44,7 +44,7 @@ async def run() -> None:
         check_new_listings,
         "interval",
         minutes=config.check_interval_minutes,
-        args=[bot, db],
+        args=[bot, db, config],
         id="rental_monitor",
         replace_existing=True,
     )

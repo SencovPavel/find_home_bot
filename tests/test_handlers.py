@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -242,3 +242,66 @@ async def test_cmd_unknown_with_typo_suggests_closest() -> None:
     assert len(message.answers) == 1
     assert "Возможно, вы имели в виду /search" in message.answers[0]
     assert "/help" in message.answers[0]
+
+
+# ── /settopic ───────────────────────────────────────────────────────
+
+
+@dataclass
+class DummyMessageWithTopic:
+    """Message с chat и message_thread_id для тестов /settopic."""
+
+    user_id: int
+    text: str | None
+    chat_id: int
+    message_thread_id: int | None
+    answers: list[str] = field(default_factory=list)
+
+    @property
+    def from_user(self) -> SimpleNamespace:
+        return SimpleNamespace(id=self.user_id)
+
+    @property
+    def chat(self) -> SimpleNamespace | None:
+        return SimpleNamespace(id=self.chat_id) if self.chat_id else None
+
+    async def answer(self, text: str, **_: object) -> None:
+        self.answers.append(text)
+
+
+@pytest.mark.asyncio
+@patch("src.bot.handlers.config", SimpleNamespace(admin_user_id=99))
+async def test_cmd_settopic_admin_in_topic_saves_config(mock_db: MagicMock) -> None:
+    """Админ отправляет /settopic в теме → сохраняется конфиг, ответ об успехе."""
+    mock_db.set_group_topic_config = AsyncMock()
+    message = DummyMessageWithTopic(
+        user_id=99,
+        text="/settopic",
+        chat_id=-1001234567890,
+        message_thread_id=42,
+    )
+
+    await handlers.cmd_settopic(message, mock_db)  # type: ignore[arg-type]
+
+    mock_db.set_group_topic_config.assert_called_once_with(-1001234567890, 42)
+    assert len(message.answers) == 1
+    assert "Тема настроена" in message.answers[0]
+    assert "Объявления будут отправляться" in message.answers[0]
+
+
+@pytest.mark.asyncio
+@patch("src.bot.handlers.config", SimpleNamespace(admin_user_id=99))
+async def test_cmd_settopic_not_in_topic_asks_to_send_in_topic(mock_db: MagicMock) -> None:
+    """/settopic не в теме → подсказка отправить внутри темы."""
+    message = DummyMessageWithTopic(
+        user_id=99,
+        text="/settopic",
+        chat_id=-1001234567890,
+        message_thread_id=None,
+    )
+
+    await handlers.cmd_settopic(message, mock_db)  # type: ignore[arg-type]
+
+    mock_db.set_group_topic_config.assert_not_called()
+    assert len(message.answers) == 1
+    assert "внутри нужной темы" in message.answers[0]

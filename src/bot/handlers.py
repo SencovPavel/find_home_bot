@@ -957,7 +957,7 @@ async def on_confirm(callback: CallbackQuery, state: FSMContext, db: Database) -
 
     if user_filter.initial_listings_count > 0:
         asyncio.create_task(
-            send_initial_listings(callback.bot, db, user_filter)
+            send_initial_listings(callback.bot, db, user_filter, config)
         )
 
 
@@ -1267,6 +1267,25 @@ async def cmd_resume(message: Message, db: Database) -> None:
 
     await db.set_active(message.from_user.id, active=True)  # type: ignore[union-attr]
     await message.answer("▶️ Мониторинг возобновлён!")
+
+
+# ── /settopic ───────────────────────────────────────────────────────
+
+@router.message(Command("settopic"))
+async def cmd_settopic(message: Message, db: Database) -> None:
+    """Настройка темы группы для отправки объявлений администратору."""
+    if await _is_rate_limited_message(message):
+        return
+    if message.from_user is None or message.from_user.id != config.admin_user_id:
+        return
+    if message.chat is None or message.message_thread_id is None:
+        await message.answer(
+            "Отправьте команду /settopic <b>внутри нужной темы</b> группы с включёнными темами.",
+            parse_mode="HTML",
+        )
+        return
+    await db.set_group_topic_config(message.chat.id, message.message_thread_id)
+    await message.answer("✅ Тема настроена. Объявления будут отправляться сюда.")
 
 
 # ── Неизвестная команда ────────────────────────────────────────────

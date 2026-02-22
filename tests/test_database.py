@@ -139,6 +139,26 @@ async def test_database_seen_with_different_sources(temp_db_path: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_database_group_topic_config_round_trip(temp_db_path: str) -> None:
+    """get_group_topic_config и set_group_topic_config сохраняют и читают настройки темы."""
+    db = Database(temp_db_path)
+    await db.connect()
+    try:
+        assert await db.get_group_topic_config() is None
+
+        await db.set_group_topic_config(chat_id=-1001234567890, message_thread_id=42)
+        config = await db.get_group_topic_config()
+        assert config is not None
+        assert config == (-1001234567890, 42)
+
+        await db.set_group_topic_config(chat_id=-1009999999999, message_thread_id=100)
+        config2 = await db.get_group_topic_config()
+        assert config2 == (-1009999999999, 100)
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
 async def test_database_empty_notified_at_round_trip_and_reset(temp_db_path: str) -> None:
     """mark_empty_notified сохраняет timestamp, upsert_filter сбрасывает его."""
     db = Database(temp_db_path)
